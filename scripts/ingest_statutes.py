@@ -31,6 +31,8 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 from tqdm import tqdm  # noqa: E402
 
+from voyageai.error import RateLimitError  # noqa: E402
+
 from legalbuddy.chunking import chunk_act  # noqa: E402
 from legalbuddy.embedder import VoyageDense, encode_sparse  # noqa: E402
 from legalbuddy.store import make_client, upsert_chunks  # noqa: E402
@@ -40,8 +42,11 @@ MANIFEST = os.path.join(os.path.dirname(__file__), "..", "data", "manifests", "s
 
 EMBED_BATCH = 64
 # Voyage reduced free tier: <=3 requests/min and <=10K tokens/min.
-MIN_REQ_GAP_S = 21.0
-TOKENS_PER_MIN = 9500
+# Bengali tokenizes denser than chars/4, so estimate conservatively.
+MIN_REQ_GAP_S = 25.0
+TOKENS_PER_MIN = 8000
+RATE_LIMIT_RETRIES = 8
+RATE_LIMIT_SLEEP_S = 70.0
 
 
 class PaceController:
@@ -123,15 +128,22 @@ def main() -> None:
             save_manifest(manifest)
             continue
         texts = [c.text for c in chunks]
-        pace.wait(sum(len(t) for t in texts) // 4)
+        pace.wait(sum(len(t) for t in texts) // 2)  # conservative for Bangla
         before = dense.total_tokens
-        try:
-            dense_vecs = dense.embed(texts, input_type="document")
-        except Exception as exc:
-            print(f"\nSTOP at {fname}: {exc}")
+        for attempt in range(RATE_LIMIT_RETRIES):
+            try:
+                dense_vecs = dense.embed(texts, input_type="document")
+                break
+            except RateLimitError as exc:
+                print(f"\nrate-limited at {fname} (try {attempt + 1}), "
+                      f"sleeping {RATE_LIMIT_SLEEP_S:.0f}s")
+                time.sleep(RATE_LIMIT_SLEEP_S)
+                pace.window_start, pace.window_tokens = time.monotonic(), 0
+        else:
+            print(f"\nSTOP at {fname}: persistent rate limits")
             save_manifest(manifest)
-            raise SystemExit(1) from exc
-        pace.record(dense.total_tokens - before)
+            raise SystemExit(1)
+        pace.record(max(dense.total_tokens - before, sum(len(t) for t in texts) // 2))
         if not sparse_ready:
             encode_sparse(["warmup"])  # download/init model once
             sparse_ready = True
