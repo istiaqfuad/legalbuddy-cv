@@ -47,6 +47,11 @@ MIN_REQ_GAP_S = 25.0
 TOKENS_PER_MIN = 8000
 RATE_LIMIT_RETRIES = 8
 RATE_LIMIT_SLEEP_S = 70.0
+# Cross-act batching: fill each paced window with chunks from several acts
+# instead of one request per act (median act is only ~11 sections).
+CYCLE_TOKEN_TARGET = 6000
+CYCLE_CHUNK_CAP = 384
+UPSERT_RETRIES = 5
 
 
 class PaceController:
@@ -113,6 +118,53 @@ def main() -> None:
     client = make_client()
     pace = PaceController()
 
+    def est_tokens(texts: list[str]) -> int:
+        return sum(len(t) for t in texts) // 2  # conservative for Bangla
+
+    def process_cycle(batch: list[tuple[str, list]]) -> None:
+        """Embed + upsert one accumulated cross-act batch, checkpoint all acts."""
+        nonlocal sparse_ready
+        texts = [c.text for _, chunks in batch for c in chunks]
+        pace.wait(est_tokens(texts))
+        before = dense.total_tokens
+        for attempt in range(RATE_LIMIT_RETRIES):
+            try:
+                dense_vecs = dense.embed(texts, input_type="document")
+                break
+            except RateLimitError:
+                fnames = ",".join(f for f, _ in batch[:3])
+                print(f"\nrate-limited at [{fnames}...] (try {attempt + 1}), "
+                      f"sleeping {RATE_LIMIT_SLEEP_S:.0f}s", flush=True)
+                time.sleep(RATE_LIMIT_SLEEP_S)
+                pace.window_start, pace.window_tokens = time.monotonic(), 0
+        else:
+            print("\nSTOP: persistent rate limits, manifest checkpointed")
+            save_manifest(manifest)
+            raise SystemExit(1)
+        pace.record(max(dense.total_tokens - before, est_tokens(texts)))
+        if not sparse_ready:
+            encode_sparse(["warmup"])  # download/init model once
+            sparse_ready = True
+        sparse_vecs = encode_sparse(texts)
+        flat_chunks = [c for _, chunks in batch for c in chunks]
+        for attempt in range(UPSERT_RETRIES):
+            try:
+                upsert_chunks(client, flat_chunks, dense_vecs, sparse_vecs)
+                break
+            except Exception as exc:  # transient Cloud/link hiccup
+                print(f"\nupsert retry {attempt + 1}: {exc!r}", flush=True)
+                time.sleep(10 * (attempt + 1))
+        else:
+            print("\nSTOP: persistent upsert failures, manifest checkpointed")
+            save_manifest(manifest)
+            raise SystemExit(1)
+        spent = dense.total_tokens - before
+        for fname, chunks in batch:
+            done[fname] = {"chunks": len(chunks), "tokens": spent // max(len(batch), 1)}
+        save_manifest(manifest)
+
+    batch: list[tuple[str, list]] = []
+    batch_est = 0
     for path in tqdm(todo, desc="acts"):
         with open(path, encoding="utf-8") as fh:
             act = json.load(fh)
@@ -122,35 +174,24 @@ def main() -> None:
             done[fname] = {"chunks": 0, "repealed": True}
             save_manifest(manifest)
             continue
-        chunks = chunk_act(act, fname)
+        try:
+            chunks = chunk_act(act, fname)
+        except Exception as exc:  # malformed file: record and move on
+            print(f"\nchunk failed {fname}: {exc!r}", flush=True)
+            done[fname] = {"chunks": 0, "error": str(exc)[:200]}
+            save_manifest(manifest)
+            continue
         if not chunks:
             done[fname] = {"chunks": 0, "empty": True}
             save_manifest(manifest)
             continue
-        texts = [c.text for c in chunks]
-        pace.wait(sum(len(t) for t in texts) // 2)  # conservative for Bangla
-        before = dense.total_tokens
-        for attempt in range(RATE_LIMIT_RETRIES):
-            try:
-                dense_vecs = dense.embed(texts, input_type="document")
-                break
-            except RateLimitError as exc:
-                print(f"\nrate-limited at {fname} (try {attempt + 1}), "
-                      f"sleeping {RATE_LIMIT_SLEEP_S:.0f}s")
-                time.sleep(RATE_LIMIT_SLEEP_S)
-                pace.window_start, pace.window_tokens = time.monotonic(), 0
-        else:
-            print(f"\nSTOP at {fname}: persistent rate limits")
-            save_manifest(manifest)
-            raise SystemExit(1)
-        pace.record(max(dense.total_tokens - before, sum(len(t) for t in texts) // 2))
-        if not sparse_ready:
-            encode_sparse(["warmup"])  # download/init model once
-            sparse_ready = True
-        sparse_vecs = encode_sparse(texts)
-        upsert_chunks(client, chunks, dense_vecs, sparse_vecs)
-        done[fname] = {"chunks": len(chunks), "tokens": dense.total_tokens - before}
-        save_manifest(manifest)
+        batch.append((fname, chunks))
+        batch_est += est_tokens([c.text for c in chunks])
+        if batch_est >= CYCLE_TOKEN_TARGET or sum(len(c) for _, c in batch) >= CYCLE_CHUNK_CAP:
+            process_cycle(batch)
+            batch, batch_est = [], 0
+    if batch:
+        process_cycle(batch)
 
     total_chunks = sum(v.get("chunks", 0) for v in done.values())
     print(f"done. files={len(done)} chunks={total_chunks}")
