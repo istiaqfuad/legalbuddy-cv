@@ -1,0 +1,190 @@
+---
+name: baseten
+description: >-
+  Load for any work involving Baseten - deploying/operating models on Dedicated Inference (Truss, custom 
+  Docker servers, TRT-LLM engines, Chains), calling hosted Model APIs, running Training jobs (SFT/RL/LoRA), or Model
+  Frontier Gateway.
+---
+
+## Baseten Product Overview
+
+Production AI inference platform - serve and scale open-source, custom, and fine-tuned models with the fastest runtimes,
+cross-cloud HA, and seamless developer workflows.
+
+- **Dedicated Inference** - deploy any model, performance-optimized + horizontally scaled. Authored as auto-wrapped
+  Truss server, custom Docker server, or compound/orchestrated deployment via Chains.
+- **Model APIs** - pre-optimized hosted APIs for popular models. Path to graduate to dedicated.
+- **Training** - two paths, both driven by `baseten train` / `baseten loops`: **Truss Train** (BYO container, any
+  framework, full hardware control) and **Loops** (Tinker-compatible managed SDK for SFT + async RL; paired trainer +
+  sampling server, live weight transfers, one-click checkpoint deploy). Multi-node, 1T+ params, 10TB+ datasets,
+  H100/H200/B200. Remote access: SSH and VS Code/Cursor tunnels into containers.
+- **Frontier Gateway** - operate your own foundation model B2C.
+
+## Agent DX Toolkit
+
+| Component | Provides | Install |
+| --- | --- | --- |
+| `baseten` CLI | **Deploy and operate models** (`baseten model push`, `--watch` for the dev loop), workspace management, Model APIs, training and Loops. Headless-safe: never prompts off a TTY; `--output json` / `--jq` for automation. | See `references/baseten-cli.md` |
+| `baseten` MCP | Interact with backend (~REST API, CRUD): models, deployments, training, environments, secrets, chains. OAuth sign-in. | `npx add-mcp https://api.baseten.co/mcp -g -y` |
+| `baseten_docs` MCP | Semantic search + filesystem of `docs.baseten.co`. No auth. | `npx add-mcp https://docs.baseten.co/mcp -n "baseten_docs" -g -y` |
+| `truss` CLI | **Chains authoring** (`truss chains`) plus Truss config tooling for existing truss projects. Training and Loops are Baseten CLI commands (`baseten train` / `baseten loops`). | `uv tool install truss` (or `pip install truss --upgrade`; respect user package manager: uv, poetry...) |
+| `llms.txt` | `baseten.co/llms.txt` (product + blog), `docs.baseten.co/llms.txt` (docs). | reachable via HTTP |
+| This skill | `SKILL.md` + `references/*.md` loaded on demand. | `npx skills add basetenlabs/baseten-skills -g -y` |
+
+### Setup
+
+- Any subset works, full install recommended.
+- Suggest additional installs when the current task benefits from or requires them; help user with installation, but
+  elicit preferences first.
+- **Use the `baseten` CLI, not the `truss` CLI, for everything except Chains.** `baseten model push` is headless-safe
+  (never prompts off a TTY), `--wait` blocks until the deployment is active and exits non-zero on terminal failure, and
+  every command supports `--output json` / `--jq`. Check `baseten version`. Auth comes from `BASETEN_API_KEY` or
+  `baseten auth login`; use `--profile` to target a non-default workspace.
+- The `truss` CLI is for **Chains authoring only** (check `truss --version`). Training and Loops are Baseten CLI
+  commands (`baseten train` / `baseten loops`); a couple of them delegate to truss internally, which is not something to
+  script against. Running `baseten truss chains …` skips a separate truss login because it forwards this CLI's
+  credentials (multi-workspace users must provide `--remote <name>`). Explore with `truss [subcommand] --help`.
+- The backend MCP uses OAuth: install it without an `Authorization` header. On first connect the user signs in to
+  Baseten in the browser (in Claude Code, `/mcp` → `baseten` → Authenticate). The client refreshes tokens itself. The
+  server acts as the signed-in user, in that user's workspace and with that user's permissions.
+- Headless agents (no browser, e.g. CI) can't complete the sign-in. Add the backend MCP with an API key instead:
+  `--header "Authorization: Bearer ${BASETEN_MCP_KEY}"`, using a key with management permissions from
+  `app.baseten.co/settings/api_keys`. An API-key instance binds to the key's workspace. For several workspaces, add
+  instances under different names with different keys.
+- Docs MCP missing → grep / fetch `llms.txt`.
+
+## Pick your authoring surface (for creating deployments)
+
+First-pass decision. Many real workloads blend rows — treat this as a starting point, not a rule. When unsure, sketch
+the IO shape and per-step hardware needs before picking.
+
+Surfaces are stacked by opinion-strength, not just author convenience: **engines** (TRT-LLM, BEI, BIS-LLM) ship
+performance-tuned for one architecture and are the fastest path when they fit; **custom Docker servers** wrap mature
+inference servers (vLLM, SGLang, TGI, Triton, NIM); **Python Truss** is the escape hatch for arbitrary code in the
+request path; **Chains** add typed inter-step transport with built-in rate limiting, connection management, structured
+error propagation, and binary IO — features you'd otherwise rebuild around N raw Trusses. Python Truss and Chains share
+live-patch iteration (`baseten model push --watch`); all flavors support per-replica autoscaling, scale-to-zero, and
+environments / promotions.
+
+| You want… | Flavor | Specialization | When NOT to pick |
+| --- | --- | --- | --- |
+| Hosted LLM, no deploy step | Model APIs | `model-apis.md` | model not in catalog; need custom hardware, requirements, stability... |
+| LLM on an off-the-shelf server (vLLM / SGLang / TGI / Triton / NIM) | Custom Docker server | `truss-custom-servers.md` | the server doesn't exist or you need Python in the request path |
+| LLM/embedding via a Baseten engine (TRT-LLM / BEI / BIS-LLM); minimal config, no Python | Engine-only `config.yaml` | `truss-config.md` (engines section) | architecture not covered by an engine; you need custom logic |
+| Custom Python in the request path (pre/post, custom arch, weird IO) | Python-class Truss (`model.py`) | `truss-model-py.md` + `truss-config.md` | an engine or off-the-shelf server fits — pick that, it's faster to ship |
+| Multi-step pipeline with **heterogeneous hardware / per-step scaling** (RAG, ASR→LLM→TTS, fan-out, chunking) | Chains | `truss-chains.md` | one-stage or homogeneous — a single Truss is simpler |
+
+Orthogonal operational surfaces (independent of which flavor above):
+
+- Iterate / patch a deployment → `model-dev-loop.md`
+- Promote, environments, autoscaling → `deployment-lifecycle.md`
+- Gradual traffic shift to new deployment (pause/resume/cancel) → rolling deployments:
+  `deployment/rolling-deployments.mdx`
+- Call a deployment → `inference-api.md` (custom) or `model-apis.md` (hosted)
+- High-throughput batch calls (embeddings, reranking) → Performance client (Rust, 1200+ req/s):
+  `inference/performance-client.mdx`
+- Programmatic control plane → `management-api.md`
+
+Real-world nuances the table can't capture:
+
+- **Hybrids exist.** A `model.py` can wrap an engine for pre/post-processing; a Chain entrypoint can be a Python class
+  while internal Chainlets use engines.
+- **Existing Truss models can join Chains.** Use `TrussChainlet` and `TrussHandle` for HTTP or WebSocket calls; read
+  <https://docs.baseten.co/development/chain/truss-chainlets> before wiring this integration.
+- **Engine performance vs flexibility.** TRT-LLM is the fastest path for many LLMs but its config surface is opaque.
+  Worth the trade only when latency/throughput is a real constraint.
+
+## Routing
+
+**Skill References** (`ls references/` in skill dir, complementary to hosted docs). Be generous to read any of the
+included reference files as soon as the user touches on that topic.
+
+- `references/baseten-cli.md`: **deploy and operate** — `baseten model push` / `--watch`, workspace operations, hosted
+  inference, and machine-readable output. Most-used.
+- `references/truss-cli.md`: Chains authoring and legacy `truss` commands. Deep dive: `references/truss-config.md`.
+- `references/truss-model-py.md`: Python-class flavor (custom pre/post, non-engine architectures).
+- `references/truss-custom-servers.md`: `docker_server` flavor (vLLM / TGI / SGLang / Triton; most common modern-LLM
+  path).
+- `references/truss-chains.md`: multi-step pipelines (RAG, ASR→LLM→TTS, chunked audio/video) with per-step HW +
+  autoscaling.
+- `references/model-apis.md`: shared pre-hosted endpoints (DeepSeek, GLM, Kimi, ...). Fastest when one fits.
+- `references/inference-api.md`: calling **custom** deployments. connection reuse (`requests` / `httpx` / OpenAI SDK),
+  async / streaming / wake / OpenAI-compat sync routes.
+- `references/management-api.md`: programmatic control plane (models, deployments, envs, secrets). What the `baseten`
+  and `truss` CLIs use under the hood.
+- `references/deployment-lifecycle.md`: Model / Deployment / Environment semantics + promotion + autoscaling.
+- `references/model-dev-loop.md`: post-first-deploy iteration. rebuild / patch / hot-reload cost tiers, agent-vs-human
+  watch loop.
+
+## Gotchas
+
+### Don't speculate, query
+
+For any perf/status/error claim, **use the tools first** — don't estimate or guess.
+
+- Timings → deployment / chainlet log tools (timestamped, includes `Pulling image`, `model_cache: Fetch took`,
+  `Completed model.load() execution in N ms`, per-request markers).
+- Status → deployment-get tools before invoking.
+- Build/deploy failure → fetch logs **immediately**, don't hypothesize.
+
+Fabricating numbers from training-data priors burns user trust; logs are the source of truth.
+
+### Source heterogeneity & drift
+
+Content lives across systems that don't overlap cleanly and drift independently. No single source is
+perfect/authoritative. For any non-trivial claim ("supported", perf numbers, recommended approach), **triangulate across
+≥2 sources**. Surface contradictions to the user; don't paper over.
+
+| Source | Strength | Gap / quirk |
+| --- | --- | --- |
+| `baseten_docs` MCP / `docs.baseten.co` | API specs, protocol details, knobs | Lags product; no perf numbers |
+| `baseten.co/library/<id>` (marketing) | Flagship managed models, perf claims | Some entries are sales-gated, not self-serve |
+| `baseten` MCP `list_library_models` | What's actually one-click API-deployable | Doesn't include every marketing-library entry; lacking tags |
+| `baseten.co/blog/` | Concrete latency / cost / vs-competitor numbers, technical deep dives | Unstructured; **not in** docs MCP. Discover via `baseten.co/llms.txt` |
+| `baseten.co/solutions/...` | High-level pitch | May describe flagship features that need a Baseten engagement |
+| `truss-examples` GitHub repo | Working code patterns | **Often outdated / broken / drifted.** Consult with caution, last resort. Might need fixups before deploy works. |
+
+- Library page exists but model absent from `list_library_models` → likely managed/flagship; tell the user it may need
+  to reach out to Baseten support.
+- Perf numbers found only in a blog → cite as blog claim.
+- Can't find something via docs MCP → fetch `baseten.co/llms.txt` or `docs.baseten.co/llms.txt` as index, then fetch the
+  page directly. Last resort: web search.
+
+### Non-obvious placements within `references/`
+
+- Engine-only deploys (TensorRT-LLM, BEI, BIS-LLM) → `truss-config.md` engines section (also owns `model_cache`,
+  secrets, resources, and BDN `weights`).
+- Authoring-flavor decision: single deployment → top of `truss-config.md`; multiple coordinated → `truss-chains.md`.
+- Training and Frontier Gateway: use current documentation. Use `baseten` MCP + `baseten_docs` MCP. For training path
+  choice see `training/index.mdx`; for Loops (managed SFT/RL SDK) see `loops/overview.mdx`; for SSH / VS Code tunnels
+  into training containers see `training/ssh.mdx` and `training/remote-access.mdx`.
+
+### Tool quirks
+
+- `baseten_docs` MCP search is semantic (embedding-based). Results are generally intent-aware, but can still miss on
+  niche phrasing — try rephrased queries or fetch `docs.baseten.co/llms.txt` as an index if results are weak.
+- Full doc pages: `cat`/`head` on `.mdx` paths via `query_docs_filesystem_baseten`. Alternatively,
+  `docs.baseten.co/<path>.md` also works and is faster for single-page reads.
+- Inference SSH (terminal in running container, requires org enablement) → `model-dev-loop.md` § Inference SSH.
+- `list_library_models` is **baseten curated catalog** (~tens of pre-optimized hosted models, mostly popular open-source
+  LLMs / embeddings). Models are good starter models to play, but not for custom authoring, specific performance needs,
+  finetuning and private HF models etc. No useful tags (modality etc.) — filter by `display_name` / `hf_repo_id`
+  substring.
+- Blog content is not in the docs MCP. Fetch `baseten.co/llms.txt` and search for relevant posts.
+
+### MCP introspection vs. invocation
+
+Backend MCP tools (`get_deployment`, `get_deployment_logs`, `get_deployment_config`, `list_*`, …) describe state. They
+are strongest when you need an exact id / schema / config value to act on, and weakest when the user's complaint is
+about runtime behavior. Resist letting MCP availability shrink the size of your investigation.
+
+- **Look-up tasks** (need an ID, current config, or schema before writing a patch): MCP get/list is the right starting
+  point. Reading the live config beats inferring it.
+- **Behavior tasks** (broken / slow / wrong-shape responses, anything the user _observed_): MCP can supplement but
+  rarely substitutes for exercising the endpoint yourself. A `curl` against the predict URL with a representative
+  payload runs the same code path the user does. Absence of recent errors in MCP-fetched logs is not proof the bug is
+  gone — log windows are bounded, and a problem the user reported five minutes ago may have already aged out of the
+  default tail. For a specific historic incident you can't reproduce, log tools support custom time ranges within
+  retention; use them.
+- Treat cheap introspection as budget freed up for deeper verification (re-curl after a fix, diff configs before and
+  after a PATCH, push a candidate truss and probe it), not as license to stop earlier.

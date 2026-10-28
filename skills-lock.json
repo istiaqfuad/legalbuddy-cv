@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "skills": {
+    "baseten": {
+      "source": "basetenlabs/baseten-skills",
+      "sourceType": "github",
+      "skillPath": "skills/baseten/SKILL.md",
+      "computedHash": "254151ac3278fc7ff11177d3c3b38f69ebb77f2c206f517438f1b7a21b1ed81d"
+    },
+    "langchain-rag": {
+      "source": "langchain-ai/langchain-skills",
+      "sourceType": "github",
+      "skillPath": "config/skills/langchain-rag/SKILL.md",
+      "computedHash": "d836f8a425104fe4e925135cb06a1217c2ded6576ee426e11e3f657e6c371da4"
+    },
+    "qdrant-advisor": {
+      "source": "qdrant/skills",
+      "sourceType": "github",
+      "skillPath": "meta/qdrant-advisor/SKILL.md",
+      "computedHash": "847fd40916d767cde7cf266a4213d6645b125e6103daea3a313d99075ec209f0"
+    }
+  }
+}

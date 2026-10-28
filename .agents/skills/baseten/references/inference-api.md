@@ -1,0 +1,292 @@
+# Baseten inference API
+
+Calling deployed models and Chains over HTTPS. Pre-hosted Model APIs (the OpenAI-compatible catalog of managed LLMs like
+DeepSeek, GLM, Kimi) live on a separate endpoint and are covered in `model-apis.md`. This file covers **custom
+deployments**: models and chains the user packaged with Truss and deployed to their workspace.
+
+- OpenAPI spec (authoritative): <https://api.baseten.co/inference-spec>
+- Reference overview: <https://docs.baseten.co/reference/inference-api/overview>
+
+**Prerequisites:** `deployment-lifecycle.md` (deployments, environments, dev vs published — route paths reflect these
+concepts).
+
+## Authentication
+
+Send `Authorization: Bearer $BASETEN_API_KEY`. The legacy `Authorization: Api-Key <key>` scheme remains accepted. API
+keys are created at <https://app.baseten.co/settings/api_keys>. Source:
+<https://docs.baseten.co/inference/calling-your-model#authentication>.
+
+## Connection reuse (low-latency clients)
+
+For workloads that call Baseten repeatedly (agents, RAG loops, batch drivers), **reuse one HTTP client per process**
+instead of opening a new TCP/TLS connection per request. A one-off `requests.post()` or a new `OpenAI()` per call pays
+TLS and HTTP setup on every round trip — often tens of milliseconds that add up when prompts are short or QPS is high.
+
+### `requests`
+
+Use a module- or app-scoped `requests.Session()` and set auth once on the session:
+
+```python
+import os
+import requests
+
+session = requests.Session()
+session.headers.update({"Authorization": f"Bearer {os.environ['BASETEN_API_KEY']}"})
+
+def predict(payload: dict) -> dict:
+    response = session.post(
+        f"https://model-{os.environ['MODEL_ID']}.api.baseten.co/environments/production/predict",
+        json=payload,
+        timeout=60,
+    )
+    response.raise_for_status()
+    return response.json()
+```
+
+Reuse the same session for streaming (`session.post(..., stream=True)`).
+
+### `httpx`
+
+Sync: one `httpx.Client` created at app startup, closed on shutdown. Async: one `httpx.AsyncClient` per event loop (or
+app lifespan). Set `headers` on the client so every call inherits `Authorization: Bearer …`.
+
+```python
+import os
+import httpx
+
+client = httpx.Client(
+    headers={"Authorization": f"Bearer {os.environ['BASETEN_API_KEY']}"},
+    timeout=60.0,
+)
+# client.post(url, json=payload) for each call; client.close() on shutdown
+```
+
+### OpenAI SDK
+
+The SDK uses `httpx` internally. **Construct one `OpenAI` (or `AsyncOpenAI`) client and reuse it** for all
+`chat.completions` calls — do not instantiate a new client per request. In web apps, register the client as a singleton
+or dependency-injected service; in scripts, create it at module scope.
+
+### When it matters most
+
+- High QPS or tight loops against the same `model-{id}` or `chain-{id}` host
+- Short prompts where network overhead is visible next to model time
+- `/wake` followed immediately by many predictions (reuse the same client for wake and predict)
+
+### Chains (internal)
+
+Chainlet-to-Chainlet calls use generated `BasetenSession` stubs with built-in connection reuse and rotation (see
+`truss-chains.md`). **External** callers to `predict` / `run_remote` must manage reuse themselves as above.
+
+## Endpoint URL shape
+
+**Models:**
+
+```
+https://model-{model_id}.api.baseten.co/{target}/{endpoint}
+```
+
+**Chains:**
+
+```
+https://chain-{chain_id}.api.baseten.co/{target}/{endpoint}
+```
+
+`{target}` is one of:
+
+- `production` - the model's production environment.
+- `environments/{env_name}` - a named environment.
+- `development` - the development deployment.
+- `deployment/{deployment_id}` - a specific deployment by ID.
+
+`{endpoint}` is the action: `predict`, `async_predict`, `wake`, `async_queue_status`, or (for custom servers)
+`sync/{route}`. Chains use `run_remote` and `async_run_remote` in place of `predict` / `async_predict`.
+
+### Models: predict endpoints
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /production/predict` | Call production. |
+| `POST /environments/{env_name}/predict` | Call a named environment. |
+| `POST /development/predict` | Call the development deployment. |
+| `POST /deployment/{deployment_id}/predict` | Call a specific deployment. |
+
+`async_predict` variants exist at the same paths. See below for async semantics.
+
+### Chains: run_remote endpoints
+
+Same paths with `run_remote` / `async_run_remote` in place of `predict` / `async_predict`.
+
+### Regional endpoints
+
+When regional environments are enabled for the organization, the environment name moves into the hostname and paths
+become bare:
+
+```
+https://model-{model_id}-{env_name}.api.baseten.co/predict
+https://chain-{chain_id}-{env_name}.api.baseten.co/run_remote
+```
+
+Path-based environment selection is rejected on regional hostnames.
+
+## Synchronous `predict`
+
+Minimal Python example (Python-class Truss):
+
+```python
+import os
+import requests
+
+model_id = os.environ["MODEL_ID"]
+session = requests.Session()
+session.headers.update({"Authorization": f"Bearer {os.environ['BASETEN_API_KEY']}"})
+
+response = session.post(
+    f"https://model-{model_id}.api.baseten.co/environments/production/predict",
+    json={"messages": [{"role": "user", "content": "Hello"}]},
+    timeout=60,
+)
+response.raise_for_status()
+print(response.json())
+```
+
+The JSON body is forwarded directly to the model's `predict` function, or to a custom server's `predict_endpoint`, or to
+the chain entrypoint's `run_remote`.
+
+## Streaming
+
+If the deployed model's `predict` returns a generator (or a custom server emits chunked responses), the response is an
+HTTP stream. Read it incrementally:
+
+```python
+# session: requests.Session with Authorization header set once (see Connection reuse)
+with session.post(url, json=payload, stream=True, timeout=60) as response:
+    response.raise_for_status()
+    for chunk in response.iter_content(chunk_size=None):
+        print(chunk.decode(), end="")
+```
+
+For OpenAI-style Server-Sent Events, use the OpenAI SDK (below) or an SSE parser. Full details:
+<https://docs.baseten.co/inference/streaming>.
+
+## OpenAI SDK (engine-only and OpenAI-compatible servers)
+
+Engine-only deploys (Engine-Builder-LLM, BIS-LLM) and OpenAI-compatible custom servers (vLLM, SGLang, etc. when
+configured that way) expose OpenAI-shaped routes. Point the OpenAI SDK at the model's **sync** path:
+
+```python
+import os
+from openai import OpenAI
+
+model_id = os.environ["MODEL_ID"]
+# Reuse this client for all calls in the process (do not construct per request).
+client = OpenAI(
+    base_url=f"https://model-{model_id}.api.baseten.co/environments/production/sync/v1",
+    api_key=os.environ["BASETEN_API_KEY"],
+)
+
+response = client.chat.completions.create(
+    model=os.environ["SERVED_MODEL_NAME"],  # match the server's --served-model-name
+    messages=[{"role": "user", "content": "Hello"}],
+    stream=True,
+)
+for chunk in response:
+    if not chunk.choices:
+        continue
+    delta = chunk.choices[0].delta.content
+    if delta:
+        print(delta, end="")
+```
+
+Set `SERVED_MODEL_NAME` to the name configured by the server (for vLLM, `--served-model-name`). Inspect the deployed
+config or its `/sync/v1/models` response instead of assuming an arbitrary value is accepted. The base URL selects the
+deployment; its server validates the model name. See <https://docs.baseten.co/inference/calling-your-model#openai-sdk>.
+
+## Sync endpoint (custom servers)
+
+Custom-server Trusses can expose any route their server implements via the `sync` path:
+
+```
+https://model-{model_id}.api.baseten.co/environments/production/sync/{route}
+```
+
+Example mappings:
+
+- `/sync/health` hits the server's `/health` route.
+- `/sync/v1/models` hits `/v1/models` (used alongside `/sync/v1/chat/completions` for full OpenAI-compat).
+
+See `truss-custom-servers.md` for how `predict_endpoint` interacts with `sync` routing.
+
+## Async inference
+
+Async is a fire-and-forget pattern: submit a request, get a `request_id` back immediately, receive the result at a
+webhook later. Use for long-running work or batch processing.
+
+```
+POST /production/async_predict
+{
+  "model_input": { ... },
+  "webhook_endpoint": "https://your-app.example.com/baseten-callback",
+  "max_time_in_queue_seconds": 600
+}
+```
+
+Key properties:
+
+- `max_time_in_queue_seconds` controls queue timeout; maximums move over time, so confirm current limits in the docs.
+- **Async is not compatible with streaming output.**
+- **Status polling never returns model output.** `webhook_endpoint` is optional, but without a webhook the model must
+  persist its own output (for example in `postprocess()`). A reconnecting client retrieves that saved output; polling
+  `/async_request/{request_id}` only reports lifecycle state.
+- **Baseten does not store model outputs.** If webhook delivery fails after all retries, the result is lost. Design your
+  webhook to be idempotent and, if durability matters, have it persist the payload before returning 200. See
+  <https://docs.baseten.co/inference/async#webhook-delivery> for current retry behavior.
+- The webhook POST includes `X-BASETEN-REQUEST-ID` and a signature header. Verify signatures; see
+  <https://docs.baseten.co/inference/async#webhook-delivery>.
+- Priority queuing is supported via a `priority` field (lower numbers take precedence); consult the async docs for the
+  current priority scale.
+- For Chains, use `async_run_remote`. Chainlet-to-Chainlet calls stay synchronous; only the entrypoint is queued.
+
+Full docs: <https://docs.baseten.co/inference/async>.
+
+### Status and cancellation
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /async_request/{request_id}` | Get current status. Available for ~1 hour after completion. |
+| `DELETE /async_request/{request_id}` | Cancel a queued async request. |
+| `GET {target}/async_queue_status` | Queue metrics for a deployment target. |
+
+## Wake endpoints
+
+If a deployment is scaled to zero, `POST {target}/wake` triggers a warm-up without sending an inference request. Useful
+for pre-warming right before a latency-sensitive workload.
+
+## Gotchas
+
+- **URL structure matters.** `/environments/production/predict` is different from `/production/predict`. Both hit
+  production, but the former names the environment explicitly; the latter is the shorthand. Regional endpoints accept
+  neither and require the bare-path form.
+- **Match the served model name.** The base URL selects the deployment, but the server can reject an unknown `model=`
+  value. Use its configured name or discover it with `/sync/v1/models`.
+- **Async never streams.** If the user needs both (long job with incremental output), this is a design constraint, not a
+  client bug.
+- **Failed webhook delivery after retries loses the result.** Log and persist on the webhook side before returning 200.
+- **Request timeouts are on your client.** Long `predict` calls need a client timeout large enough (or use async).
+- **Reuse HTTP clients for repeated calls.** One-off `requests.post()` or a new `OpenAI()` per request adds
+  TLS/handshake latency every time. Use `requests.Session`, a long-lived `httpx` client, or a process-scoped OpenAI
+  client (see Connection reuse).
+- **Gates on `development` targets return 404 when the dev deployment has scaled to zero** between requests.
+  `baseten model push --watch` keeps it warm by default; outside of a watch loop, consider `/wake` or the scale-to-zero
+  behavior.
+- **Custom server `sync` routing only works for routes the server actually exposes.** `predict_endpoint` is the shortcut
+  for the primary inference route; everything else uses `/sync/{route}`.
+
+## Further reading
+
+- Calling deployed models: <https://docs.baseten.co/inference/calling-your-model>
+- Inference API overview: <https://docs.baseten.co/reference/inference-api/overview>
+- Streaming: <https://docs.baseten.co/inference/streaming>
+- Async and webhooks: <https://docs.baseten.co/inference/async>
+- OpenAPI spec: <https://api.baseten.co/inference-spec>
+- Pre-hosted Model APIs: `model-apis.md`.

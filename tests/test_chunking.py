@@ -1,0 +1,117 @@
+"""Unit tests for statute chunking: boundaries, headers, footnotes, edge cases."""
+
+from legalbuddy.chunking import (
+    build_header,
+    chunk_act,
+    extract_section_label,
+    resolve_footnotes,
+    split_long_text,
+    stable_chunk_id,
+)
+
+
+def _act(**over):
+    base = {
+        "act_title": "The Penal Code, 1860",
+        "act_no": "XLV",
+        "act_year": "1860",
+        "language": "english",
+        "is_repealed": False,
+        "sections": [],
+        "footnotes": [],
+        "source_url": "http://example/act-print-11.html",
+    }
+    base.update(over)
+    return base
+
+
+def test_short_section_is_single_self_contained_chunk():
+    act = _act(sections=[{"section_content": "302. Whoever commits murder shall be punished with death."}])
+    chunks = chunk_act(act, "act-print-11.json")
+    assert len(chunks) == 1
+    c = chunks[0]
+    assert c.text.startswith("The Penal Code, 1860 (XLV of 1860), Section 302")
+    assert "murder" in c.text
+    assert c.section_label == "302"
+    assert (c.part_index, c.part_count) == (0, 1)
+
+
+def test_section_title_included_in_header():
+    act = _act(sections=[{"section_title": "প্রারম্ভিক", "section_content": "১। এই আইন ..."}])
+    (c,) = chunk_act(act, "x.json")
+    assert "প্রারম্ভিক" in c.text.split("\n")[0]
+    assert c.section_label == "১"
+
+
+def test_long_section_splits_with_overlap_and_header():
+    body = " ".join(f"Sentence number {i} states a distinct rule of law here." for i in range(80))
+    assert len(body) > 2000
+    act = _act(sections=[{"section_content": "10. " + body}])
+    chunks = chunk_act(act, "x.json")
+    assert len(chunks) > 1
+    assert all(ch.text.startswith("The Penal Code, 1860") for ch in chunks)
+    assert all(ch.part_count == len(chunks) for ch in chunks)
+    # Overlap: some sentence appears in two adjacent chunks.
+    assert any(
+        s in chunks[i + 1].text
+        for i in range(len(chunks) - 1)
+        for s in ["Sentence number 10", "Sentence number 20", "Sentence number 30"]
+    )
+
+
+def test_bangla_splits_on_dari():
+    body = " ".join(f"এটি {i} নম্বর বিধান।" for i in range(200))
+    act = _act(sections=[{"section_content": body}])
+    chunks = chunk_act(act, "x.json")
+    assert len(chunks) > 1
+    assert all(len(ch.text) <= 2500 for ch in chunks)
+
+
+def test_footnote_markers_resolved_and_appended():
+    act = _act(
+        sections=[{"section_content": "1. It extends to the whole of1[Bangladesh]. Under3[the schedule]."}],
+        footnotes=[
+            {"footnote_text": "Bangladesh substituted for Pakistan."},
+            {"footnote_text": "Unused note."},
+            {"footnote_text": "Schedule inserted in 1973."},
+        ],
+    )
+    (c,) = chunk_act(act, "x.json")
+    assert "Amendment notes:" in c.text
+    assert "Bangladesh substituted for Pakistan." in c.text
+    assert "Schedule inserted in 1973." in c.text
+    assert "Unused note." not in c.text
+
+
+def test_repealed_and_empty_sections_skipped():
+    assert chunk_act(_act(is_repealed=True, sections=[{"section_content": "1. Text."}]), "x") == []
+    act = _act(sections=[{"section_content": "   "}, {"section_content": "2. Real."}])
+    chunks = chunk_act(act, "x.json")
+    assert len(chunks) == 1
+
+
+def test_ids_stable_and_unique():
+    act = _act(sections=[{"section_content": "1. A."}, {"section_content": "2. B."}])
+    first = [c.chunk_id for c in chunk_act(act, "f.json")]
+    second = [c.chunk_id for c in chunk_act(act, "f.json")]
+    assert first == second and len(set(first)) == 2
+    assert stable_chunk_id("f.json", 0, 0) != stable_chunk_id("f.json", 1, 0)
+
+
+def test_extract_section_label():
+    assert extract_section_label("5. (1) No person shall") == "5"
+    assert extract_section_label("৩। এই আইন") == "৩"
+    assert extract_section_label("Preamble text without number") == ""
+
+
+def test_resolve_footnotes_out_of_range_safe():
+    assert resolve_footnotes("See 9[B].", [{"footnote_text": "Only one."}]) == []
+    assert resolve_footnotes("No markers.", [{"footnote_text": "Note."}]) == []
+
+
+def test_header_without_label_or_title():
+    assert build_header("Some Act", "I", "1900", "", "") == "Some Act (I of 1900)"
+
+
+def test_split_long_text_tiny_tail_merged():
+    assert len(split_long_text("A. " + "x " * 800 + "tail.")) >= 1
