@@ -44,27 +44,54 @@ def test_section_title_included_in_header():
 
 
 def test_long_section_splits_with_overlap_and_header():
-    body = " ".join(f"Sentence number {i} states a distinct rule of law here." for i in range(80))
+    parts = " ".join(
+        f"({i}) Subsection {i} states a distinct rule of law for this purpose." for i in range(1, 60)
+    )
+    body = "10. " + parts
     assert len(body) > 2000
-    act = _act(sections=[{"section_content": "10. " + body}])
+    act = _act(sections=[{"section_content": body}])
     chunks = chunk_act(act, "x.json")
     assert len(chunks) > 1
     assert all(ch.text.startswith("The Penal Code, 1860") for ch in chunks)
     assert all(ch.part_count == len(chunks) for ch in chunks)
-    # Overlap: some sentence appears in two adjacent chunks.
-    assert any(
-        s in chunks[i + 1].text
-        for i in range(len(chunks) - 1)
-        for s in ["Sentence number 10", "Sentence number 20", "Sentence number 30"]
-    )
+    assert "(1) Subsection 1" in chunks[0].text
+    # Overlap guarantee: each split window (after the first) opens with the
+    # previous window's trailing subsection, so the boundary rule is whole
+    # on both sides.
+    windows = split_long_text(body)
+    assert len(windows) == len(chunks)
+    boundary_rule = "(22) Subsection 22 states a distinct rule"
+    assert boundary_rule in windows[0] and windows[1].startswith(boundary_rule)
 
 
-def test_bangla_splits_on_dari():
-    body = " ".join(f"এটি {i} নম্বর বিধান।" for i in range(200))
+def test_bangla_long_section_splits():
+    body = " ".join(f"({i}) এটি {i} নম্বর উপধারা।" for i in range(1, 120))
     act = _act(sections=[{"section_content": body}])
     chunks = chunk_act(act, "x.json")
     assert len(chunks) > 1
-    assert all(len(ch.text) <= 2500 for ch in chunks)
+    assert all(len(ch.text) <= 2200 for ch in chunks)
+
+
+def test_void_sections_skipped():
+    act = _act(sections=[
+        {"section_content": "3. [Repealed by section 2 and Schedule of the Repealing Act, 1938]."},
+        {"section_content": "4. (1) No person shall use white phosphorus."},
+    ])
+    chunks = chunk_act(act, "x.json")
+    assert len(chunks) == 1
+    assert "white phosphorus" in chunks[0].text
+
+
+def test_markers_cleaned_but_notes_kept():
+    act = _act(
+        sections=[{"section_content": "1. It extends to the whole of1[Bangladesh]."}],
+        footnotes=[{"footnote_text": "Bangladesh substituted for Pakistan."}],
+    )
+    (c,) = chunk_act(act, "x.json")
+    body_line = [ln for ln in c.text.split("\n") if ln.startswith("1.")][0]
+    assert "1[Bangladesh]" not in body_line
+    assert "whole ofBangladesh" in body_line.replace(" ", "") or "Bangladesh" in body_line
+    assert "Amendment notes: Bangladesh substituted for Pakistan." in c.text
 
 
 def test_footnote_markers_resolved_and_appended():

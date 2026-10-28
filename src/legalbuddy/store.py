@@ -24,7 +24,21 @@ SPARSE_NAME = "sparso"
 
 
 def make_client() -> QdrantClient:
-    return QdrantClient(url=os.environ["QDRANT_URL"], api_key=os.environ["QDRANT_API_KEY"])
+    """Client tuned for Qdrant Cloud behind a reverse proxy.
+
+    qdrant-client defaults to port 6333 when the URL omits a port, but an
+    https Cloud endpoint is served on 443 — without the explicit port the
+    connection intermittently fails (SSL/write/read timeouts). A generous
+    REST timeout absorbs slow cross-region links.
+    """
+    from urllib.parse import urlparse
+
+    url = os.environ["QDRANT_URL"]
+    kwargs: dict = {"url": url, "api_key": os.environ["QDRANT_API_KEY"], "timeout": 120}
+    parsed = urlparse(url)
+    if parsed.scheme == "https" and parsed.port is None:
+        kwargs["port"] = 443
+    return QdrantClient(**kwargs)
 
 
 def chunk_to_payload(chunk) -> dict:
