@@ -18,9 +18,6 @@ export default function Chat() {
   const send = useChatStore((s) => s.send);
   const dismissError = useChatStore((s) => s.dismissError);
   const openSources = useChatStore((s) => s.openSources);
-  const sidebarOpen = useChatStore((s) => s.sidebarOpen);
-  const sidebarPinned = useChatStore((s) => s.sidebarPinned);
-  const railVisible = sidebarOpen && sidebarPinned;
 
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -44,12 +41,8 @@ export default function Chat() {
   return (
     <div className="flex min-h-0 flex-1">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div
-          ref={scrollRef}
-          className={`flex-1 space-y-5 overflow-y-auto px-4 py-6 sm:px-6 ${
-            railVisible ? "" : "mx-auto w-full max-w-3xl"
-          }`}
-        >
+        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-6 sm:px-6">
           {messages.length === 0 && !pending ? (
             <div className="mx-auto max-w-xl pt-6">
               <p className="font-display text-xl text-stone-100">What&apos;s going on? Ask it plainly.</p>
@@ -78,7 +71,7 @@ export default function Chat() {
                   </p>
                 </div>
               ) : (
-                <div key={i} className="max-w-[95%]">
+                <div key={i} className="w-full">
                   <div className="rounded-lg border border-stone-800 bg-stone-900/60 px-4 py-3 text-sm leading-relaxed text-stone-200">
                     {msg.text ? (
                       <AnswerMarkdown
@@ -111,10 +104,11 @@ export default function Chat() {
               </button>
             </div>
           ) : null}
+          </div>
         </div>
 
         <div className="border-t border-stone-800/80 bg-ink px-4 py-3 sm:px-6">
-          <div className={`mx-auto flex items-center gap-2 ${railVisible ? "" : "max-w-3xl"}`}>
+          <div className="mx-auto flex max-w-3xl items-center gap-2">
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -137,7 +131,7 @@ export default function Chat() {
               Ask
             </button>
           </div>
-          <p className={`mx-auto mt-2 text-center text-[11px] leading-relaxed text-stone-500 ${railVisible ? "" : "max-w-3xl"}`}>
+          <p className="mx-auto mt-2 max-w-3xl text-center text-[11px] leading-relaxed text-stone-500">
             LegalBuddy can make mistakes. Check important claims against the linked act.
           </p>
         </div>
