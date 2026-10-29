@@ -15,9 +15,11 @@ interface ChatState {
   pending: boolean;
   failed: boolean;
   flash: number | null;
+  expandedRef: number | null;
   send: (question: string) => Promise<void>;
   dismissError: () => void;
   jumpTo: (ref: number) => void;
+  toggleSource: (ref: number) => void;
 }
 
 let flashTimer: ReturnType<typeof setTimeout> | null = null;
@@ -35,14 +37,18 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   pending: false,
   failed: false,
   flash: null,
+  expandedRef: null,
 
   dismissError: () => set({ failed: false }),
 
+  toggleSource: (ref) =>
+    set((s) => ({ expandedRef: s.expandedRef === ref ? null : ref })),
+
   jumpTo: (ref) => {
+    set({ flash: ref, expandedRef: ref });
     document
       .getElementById(`cite-card-${ref}`)
-      ?.scrollIntoView({ behavior: "smooth", block: "center" });
-    set({ flash: ref });
+      ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     if (flashTimer) clearTimeout(flashTimer);
     flashTimer = setTimeout(() => set({ flash: null }), 1800);
   },

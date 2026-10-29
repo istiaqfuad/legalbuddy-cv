@@ -15,7 +15,13 @@ from dataclasses import dataclass, field
 from openai import OpenAI
 
 from legalbuddy.embedder import VoyageDense, encode_sparse
-from legalbuddy.store import build_filter, hybrid_search, make_client
+from legalbuddy.store import (
+    build_filter,
+    dbsf_search,
+    hybrid_search,
+    make_client,
+    weighted_search,
+)
 
 CHAT_MODEL = "meta-models/muse-spark-open-1026"
 BASE_URL = "https://inference.baseten.co/v1"
@@ -59,14 +65,25 @@ def _client() -> OpenAI:
 def retrieve(question: str, language: str | None = None,
              act_year: str | None = None, limit: int = 8,
              section_label: str | None = None):
-    """Hybrid retrieve statute chunks for a question."""
+    """Hybrid retrieve statute chunks for a question.
+
+    Fusion mode comes from ``FUSION`` (``weighted`` default, ``rrf``, or
+    ``dbsf``); see :mod:`legalbuddy.store` for the trade-offs.
+    """
     dense = VoyageDense()
     dense_q = dense.embed([question], input_type="query")[0]
     sparse_q = encode_sparse([question])[0]
+    query_filter = build_filter(language=language, act_year=act_year,
+                                section_label=section_label)
+    mode = os.environ.get("FUSION", "weighted").lower()
+    if mode == "dbsf":
+        return dbsf_search(make_client(), dense_q, sparse_q, limit=limit,
+                           query_filter=query_filter)
+    if mode == "weighted":
+        return weighted_search(make_client(), question, dense_q, sparse_q,
+                               limit=limit, query_filter=query_filter)
     return hybrid_search(
-        make_client(), dense_q, sparse_q, limit=limit,
-        query_filter=build_filter(language=language, act_year=act_year,
-                                  section_label=section_label))
+        make_client(), dense_q, sparse_q, limit=limit, query_filter=query_filter)
 
 
 def _evidence_block(hits) -> tuple[str, list[Citation]]:

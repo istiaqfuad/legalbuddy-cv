@@ -38,6 +38,7 @@ def main() -> None:
     args = ap.parse_args()
 
     hits = 0
+    precisions: list[float] = []
     for n, (question, expected) in enumerate(GOLDEN):
         if n:
             time.sleep(25)  # respect Voyage 3 RPM free-tier limit
@@ -47,11 +48,18 @@ def main() -> None:
             print(f"SKIP {question!r}: {exc}")
             continue
         titles = [str((p.payload or {}).get("act_title", "")) for p in res.points]
-        ok = any(expected in t for t in titles)
+        good = sum(1 for t in titles if expected in t)
+        prec = good / max(len(titles), 1)
+        precisions.append(prec)
+        ok = good > 0
         hits += ok
         mark = "OK " if ok else "MISS"
-        print(f"[{mark}] {question!r}\n     -> {titles[0] if titles else 'no hits'}")
-    print(f"\nrecall@{args.limit}: {hits}/{len(GOLDEN)}")
+        print(f"[{mark}] {question!r}  precision@{args.limit}={prec:.2f}")
+        for t in titles:
+            print(f"     {'+' if expected in t else '-'} {t}")
+    mean_p = sum(precisions) / max(len(precisions), 1)
+    print(f"\nrecall@{args.limit}: {hits}/{len(GOLDEN)}  "
+          f"mean precision@{args.limit}: {mean_p:.2f}")
 
 
 if __name__ == "__main__":

@@ -118,6 +118,43 @@ def test_chat_stream_mid_failure_stays_generic(monkeypatch):
     assert "Answer generation failed. Please try again." in resp.text
 
 
+def test_retrieve_fusion_dispatch(monkeypatch):
+    import legalbuddy.chat as chat_mod
+
+    calls = []
+
+    class FakeDense:
+        def embed(self, texts, input_type=None):
+            return [[0.1, 0.2]]
+
+    monkeypatch.setattr(chat_mod, "VoyageDense", lambda: FakeDense())
+    monkeypatch.setattr(chat_mod, "encode_sparse", lambda texts: [([1], [0.5])])
+    monkeypatch.setattr(chat_mod, "make_client", lambda: object())
+    monkeypatch.setattr(chat_mod, "build_filter", lambda **k: None)
+    for name in ("hybrid_search", "dbsf_search", "weighted_search"):
+        monkeypatch.setattr(
+            chat_mod, name,
+            lambda *a, _n=name, **k: calls.append(_n) or SimpleNamespace(points=[]))
+
+    from types import SimpleNamespace
+
+    monkeypatch.delenv("FUSION", raising=False)
+    chat_mod.retrieve("খুন?")
+    assert calls == ["weighted_search"]  # default: dense-heavy, BN-aware
+
+    monkeypatch.setenv("FUSION", "rrf")
+    chat_mod.retrieve("murder?")
+    assert calls[-1] == "hybrid_search"
+
+    monkeypatch.setenv("FUSION", "dbsf")
+    chat_mod.retrieve("murder?")
+    assert calls[-1] == "dbsf_search"
+
+    monkeypatch.setenv("FUSION", "nonsense")
+    chat_mod.retrieve("murder?")
+    assert calls[-1] == "hybrid_search"  # unknown falls back to RRF
+
+
 def test_health_ok(monkeypatch):
     class FakeClient:
         def get_collection(self, name):

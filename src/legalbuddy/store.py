@@ -220,3 +220,103 @@ def hybrid_search(client: QdrantClient, dense_query: list[float],
         with_payload=True,
     )
 
+
+def dbsf_search(client: QdrantClient, dense_query: list[float],
+                sparse_query: tuple[list[int], list[float]],
+                limit: int = 8, prefetch_limit: int = 40,
+                query_filter: models.Filter | None = None):
+    """One-call hybrid search fused with DBSF (score-distribution fusion).
+
+    Same shape as :func:`hybrid_search`, no parameters to tune: per-prefetch
+    scores are normalized by mean +/- 3 deviations before summing.
+    """
+    s_idx, s_val = sparse_query
+    return client.query_points(
+        collection_name=COLLECTION,
+        prefetch=[
+            models.Prefetch(query=dense_query, using=DENSE_NAME, limit=prefetch_limit,
+                            filter=query_filter),
+            models.Prefetch(
+                query=models.SparseVector(indices=s_idx, values=s_val),
+                using=SPARSE_NAME, limit=prefetch_limit, filter=query_filter),
+        ],
+        query=models.FusionQuery(fusion=models.Fusion.DBSF),
+        limit=limit,
+        with_payload=True,
+    )
+
+
+_BN_RANGE = ("\u0980", "\u09ff")  # Bengali block: script detection, no deps.
+
+
+def is_bengali_script(text: str) -> bool:
+    """True when the query carries Bengali-script tokens (pure or mixed)."""
+    return any(_BN_RANGE[0] <= ch <= _BN_RANGE[1] for ch in text)
+
+
+def dense_weight_for(query: str) -> float:
+    """Dense weight for weighted fusion, from env with a Bengali-script rule.
+
+    ``DENSE_WEIGHT`` (default 0.7) normally; ``DENSE_WEIGHT_BN`` (default
+    0.85) when the query has Bengali-script tokens, where same-script BM25
+    floods the ranking with surface matches. Env-tunable without code change.
+    """
+    try:
+        base = float(os.environ.get("DENSE_WEIGHT", "0.7"))
+        bn = float(os.environ.get("DENSE_WEIGHT_BN", "0.85"))
+    except ValueError:
+        base, bn = 0.7, 0.85
+    base = min(max(base, 0.0), 1.0)
+    bn = min(max(bn, 0.0), 1.0)
+    return bn if is_bengali_script(query) else base
+
+
+def _min_max(scores: list[float]) -> list[float]:
+    """Min-max normalize one candidate list; all-equal maps to 1.0s."""
+    if not scores:
+        return []
+    lo, hi = min(scores), max(scores)
+    if hi == lo:
+        return [1.0] * len(scores)
+    return [(s - lo) / (hi - lo) for s in scores]
+
+
+def weighted_search(client: QdrantClient, query: str, dense_query: list[float],
+                    sparse_query: tuple[list[int], list[float]],
+                    limit: int = 8, prefetch_limit: int = 40,
+                    query_filter: models.Filter | None = None):
+    """Weighted score fusion: dense meaning outvotes sparse surface matches.
+
+    Two single-vector queries (same filter), min-max normalized per list,
+    combined as ``w*dense + (1-w)*sparse`` with :func:`dense_weight_for`.
+    Returns the same ``.points`` shape (id/payload/score) as the fused
+    searches so callers are unchanged; scores are fused weights in [0, 1].
+    """
+    from types import SimpleNamespace
+
+    s_idx, s_val = sparse_query
+    dense_hits = client.query_points(
+        collection_name=COLLECTION, query=dense_query, using=DENSE_NAME,
+        limit=prefetch_limit, query_filter=query_filter,
+        with_payload=True).points
+    sparse_hits = client.query_points(
+        collection_name=COLLECTION,
+        query=models.SparseVector(indices=s_idx, values=s_val),
+        using=SPARSE_NAME, limit=prefetch_limit, query_filter=query_filter,
+        with_payload=True).points
+    w_dense = dense_weight_for(query)
+    w_sparse = 1.0 - w_dense
+    dense_norm = _min_max([float(p.score) for p in dense_hits])
+    sparse_norm = _min_max([float(p.score) for p in sparse_hits])
+    fused: dict = {}
+    for p, n in zip(dense_hits, dense_norm):
+        entry = fused.setdefault(p.id, {"payload": p.payload, "score": 0.0})
+        entry["score"] += w_dense * n
+    for p, n in zip(sparse_hits, sparse_norm):
+        entry = fused.setdefault(p.id, {"payload": p.payload, "score": 0.0})
+        entry["score"] += w_sparse * n
+    ranked = sorted(fused.items(), key=lambda kv: kv[1]["score"], reverse=True)[:limit]
+    points = [SimpleNamespace(id=pid, payload=e["payload"], score=e["score"])
+              for pid, e in ranked]
+    return SimpleNamespace(points=points)
+

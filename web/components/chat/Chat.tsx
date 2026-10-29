@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { FRIENDLY_ERROR, SUGGESTIONS } from "@/lib/chat-copy";
 import { useChatStore } from "@/stores/chat-store";
 import AnswerMarkdown from "./AnswerMarkdown";
-import CitationCard from "./CitationCard";
+import SourceCard from "./SourceCard";
 import ThinkingDots from "./ThinkingDots";
 
 /** Conversation view. State lives in the chat store; this module owns
@@ -15,9 +15,11 @@ export default function Chat() {
   const pending = useChatStore((s) => s.pending);
   const failed = useChatStore((s) => s.failed);
   const flash = useChatStore((s) => s.flash);
+  const expandedRef = useChatStore((s) => s.expandedRef);
   const send = useChatStore((s) => s.send);
   const dismissError = useChatStore((s) => s.dismissError);
   const jumpTo = useChatStore((s) => s.jumpTo);
+  const toggleSource = useChatStore((s) => s.toggleSource);
 
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -69,8 +71,11 @@ export default function Chat() {
                 </p>
               </div>
             ) : (
-              <div key={i} className="max-w-[95%]">
-                <div className="rounded-lg border border-stone-800 bg-stone-900/60 px-4 py-3 text-sm leading-relaxed text-stone-200">
+              <div
+                key={i}
+                className="max-w-[95%] lg:grid lg:max-w-full lg:grid-cols-[minmax(0,1fr)_250px] lg:items-start lg:gap-4"
+              >
+                <div className="min-w-0 rounded-lg border border-stone-800 bg-stone-900/60 px-4 py-3 text-sm leading-relaxed text-stone-200">
                   {msg.text ? (
                     <AnswerMarkdown text={msg.text} onCite={jumpTo} />
                   ) : (
@@ -80,14 +85,22 @@ export default function Chat() {
                   )}
                 </div>
                 {msg.citations && msg.citations.length > 0 ? (
-                  <div className="mt-2 space-y-2">
-                    <p className="text-xs font-semibold tracking-wider text-stone-500 uppercase">
-                      Cited sections
+                  <aside aria-label="Sources" className="mt-2 min-w-0 lg:mt-0">
+                    <p className="mb-1.5 hidden text-xs font-semibold tracking-wider text-stone-500 uppercase lg:block">
+                      Sources · {msg.citations.length}
                     </p>
-                    {msg.citations.map((c) => (
-                      <CitationCard key={c.ref} citation={c} flash={flash === c.ref} />
-                    ))}
-                  </div>
+                    <div className="space-y-2 lg:sticky lg:top-24">
+                      {msg.citations.map((c) => (
+                        <SourceCard
+                          key={c.ref}
+                          citation={c}
+                          open={expandedRef === c.ref}
+                          flash={flash === c.ref}
+                          onToggle={() => toggleSource(c.ref)}
+                        />
+                      ))}
+                    </div>
+                  </aside>
                 ) : null}
               </div>
             ),
