@@ -116,8 +116,8 @@ export default function Chat() {
           <div className="mx-auto max-w-xl pt-6">
             <p className="font-display text-xl text-stone-100">What&apos;s going on? Ask it plainly.</p>
             <p className="mt-2 text-sm leading-relaxed text-stone-400">
-              Describe the problem in your own words, in English, Bangla, or both. You&apos;ll
-              get an answer that points to the exact sections behind it.
+              Describe the problem the way you&apos;d tell a friend. You&apos;ll get it back
+              in simple sentences, each pointing to the exact section behind it.
             </p>
             <div className="mt-4 space-y-2">
               {SUGGESTIONS.map((s) => (
@@ -185,7 +185,7 @@ export default function Chat() {
                 send(input);
               }
             }}
-            placeholder="Ask in English, বাংলা, or both…"
+            placeholder="Ask in your own words…"
             disabled={pending}
             aria-label="Ask a legal question"
             className="min-w-0 flex-1 rounded-md border border-stone-700 bg-stone-900/60 px-3 py-2 text-sm text-stone-100 placeholder:text-stone-500 focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none disabled:opacity-60"

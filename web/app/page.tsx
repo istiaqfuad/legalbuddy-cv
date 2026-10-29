@@ -8,7 +8,7 @@ const STEPS = [
   {
     n: "01",
     title: "Ask like you'd ask a friend",
-    body: "No legal keywords needed. Just describe the problem in your own words. English, Bangla, or both mixed together.",
+    body: "No legal keywords needed. Just describe the problem the way you'd tell a friend, in the language you think in.",
   },
   {
     n: "02",
@@ -47,8 +47,8 @@ const FEATURES = [
     body: "Every important claim ends in [1], [2]. Each one is a card with the act, the section, the quoted passage, and a link.",
   },
   {
-    title: "Speaks your language",
-    body: "Ask in Bangla, get grounded in an English act. Mix both mid-sentence. There's nothing to configure.",
+    title: "Plain sentences, not legalese",
+    body: "You ask the way you speak. The answer comes back in simple sentences you don't need a dictionary for, with the exact section attached for proof.",
   },
   {
     title: "Admits what it doesn't know",
@@ -69,7 +69,7 @@ const TIERS = [
     cta: "Start chatting",
     href: "/chat",
     soon: false,
-    points: ["50 questions a day", "Full section citations", "English, Bangla & mixed"],
+    points: ["50 questions a day", "Full section citations", "Your language, plain answers"],
   },
   {
     name: "Researcher",
@@ -110,8 +110,8 @@ export default function Landing() {
               Know what the law <span className="text-gold">actually says</span>.
             </h1>
             <p className="mt-4 max-w-md text-base leading-relaxed text-stone-400">
-              LegalBuddy reads Bangladesh&apos;s laws for you and points to the exact section
-              behind every answer, in English or Bangla.
+              Ask in the language you think in. Get complex laws back in plain, simple
+              sentences, each pointing to the exact section behind it.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
               <Link

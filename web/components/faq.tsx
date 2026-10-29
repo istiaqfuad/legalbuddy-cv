@@ -8,8 +8,8 @@ const ITEMS = [
     a: "Straight from Bangladesh's statute books: the acts published on bdlaws. LegalBuddy searches them section by section, then answers only from what it finds. If nothing relevant turns up, it tells you that instead of guessing.",
   },
   {
-    q: "Do I need to ask in a particular language?",
-    a: "No. English, Bangla, or a mix, whatever's easiest. There's no setting to flip; the answer just follows the language you asked in.",
+    q: "Legal wording confuses me. Will I understand the answers?",
+    a: "That's the whole point. Ask in your own words and the answer comes back in simple sentences, with the exact section attached so you can see where every claim came from.",
   },
   {
     q: "What does a citation actually give me?",

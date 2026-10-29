@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "LegalBuddy: Know what the law actually says",
   description:
-    "Ask questions about Bangladeshi law in English, Bangla, or both. Every answer cites the exact statute sections it relies on.",
+    "Ask questions about Bangladeshi law in your own words. Get plain answers where every claim cites the exact statute section behind it.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
