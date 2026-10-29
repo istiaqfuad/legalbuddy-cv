@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { FRIENDLY_ERROR, SUGGESTIONS } from "@/lib/chat-copy";
 import { useChatStore } from "@/stores/chat-store";
 import AnswerMarkdown from "./AnswerMarkdown";
+import HistorySidebar from "./HistorySidebar";
 import SourcesSidebar from "./SourcesSidebar";
 import ThinkingDots from "./ThinkingDots";
 
@@ -16,10 +17,15 @@ export default function Chat() {
   const pending = useChatStore((s) => s.pending);
   const failed = useChatStore((s) => s.failed);
   const send = useChatStore((s) => s.send);
+  const stop = useChatStore((s) => s.stop);
+  const regenerate = useChatStore((s) => s.regenerate);
   const dismissError = useChatStore((s) => s.dismissError);
   const openSources = useChatStore((s) => s.openSources);
+  const newChat = useChatStore((s) => s.newChat);
+  const toggleHistory = useChatStore((s) => s.toggleHistory);
 
   const [input, setInput] = useState("");
+  const [copied, setCopied] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -38,9 +44,53 @@ export default function Chat() {
     void send(q);
   }
 
+  async function copyText(text: string, index: number) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Clipboard blocked (permissions, insecure context): fall back to
+      // a temporary selection so copy still works.
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    setCopied(index);
+    setTimeout(() => setCopied((c) => (c === index ? null : c)), 1500);
+  }
+
+  const lastAssistantIdx = messages.map((m) => m.role).lastIndexOf("assistant");
+
   return (
     <div className="flex min-h-0 flex-1">
+      <HistorySidebar />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="flex items-center gap-1 border-b border-stone-800/60 px-2 py-1.5 sm:px-4">
+          <button
+            onClick={toggleHistory}
+            className="rounded-md p-2 text-stone-400 transition-colors hover:bg-stone-800/60 hover:text-stone-100"
+            title="Toggle chat history"
+            aria-label="Toggle chat history"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <path d="M9 4v16" />
+            </svg>
+          </button>
+          <button
+            onClick={newChat}
+            disabled={pending}
+            className="rounded-md p-2 text-stone-400 transition-colors hover:bg-stone-800/60 hover:text-stone-100 disabled:opacity-40"
+            title="Start a new chat"
+            aria-label="Start a new chat"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+            </svg>
+          </button>
+        </div>
         <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-6 sm:px-6">
           {messages.length === 0 && !pending ? (
@@ -84,10 +134,46 @@ export default function Chat() {
                       </p>
                     )}
                   </div>
+                  {!pending && msg.text ? (
+                    <div className="mt-1.5 flex items-center gap-1">
+                      <button
+                        onClick={() => void copyText(msg.text, i)}
+                        className="rounded p-1.5 text-stone-500 transition-colors hover:bg-stone-800/60 hover:text-stone-200"
+                        title={copied === i ? "Copied" : "Copy answer"}
+                        aria-label={copied === i ? "Copied" : "Copy answer"}
+                      >
+                        {copied === i ? (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M20 6 9 17l-5-5" />
+                          </svg>
+                        ) : (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <rect x="9" y="9" width="13" height="13" rx="2" />
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                          </svg>
+                        )}
+                      </button>
+                      {i === lastAssistantIdx ? (
+                        <button
+                          onClick={() => void regenerate()}
+                          className="rounded p-1.5 text-stone-500 transition-colors hover:bg-stone-800/60 hover:text-stone-200"
+                          title="Regenerate answer"
+                          aria-label="Regenerate answer"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M3 12a9 9 0 0 1 15.5-6.2L21 8" />
+                            <path d="M21 3v5h-5" />
+                            <path d="M21 12a9 9 0 0 1-15.5 6.2L3 16" />
+                            <path d="M3 21v-5h5" />
+                          </svg>
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
                   {!pending && msg.citations && msg.citations.length > 0 ? (
                     <button
                       onClick={() => openSources(msg.citations ?? [], null)}
-                      className="mt-2 cursor-pointer text-xs font-medium text-stone-500 transition-colors hover:text-gold-light"
+                      className="mt-1 cursor-pointer text-xs font-medium text-stone-500 transition-colors hover:text-gold-light"
                     >
                       Sources · {msg.citations.length} cited sections →
                     </button>
@@ -123,13 +209,22 @@ export default function Chat() {
               aria-label="Ask a legal question"
               className="min-w-0 flex-1 rounded-md border border-stone-700 bg-stone-900/60 px-3 py-2 text-sm text-stone-100 placeholder:text-stone-500 focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none disabled:opacity-60"
             />
-            <button
-              onClick={() => submit(input)}
-              disabled={pending || input.trim().length === 0}
-              className="shrink-0 rounded-md bg-gold px-4 py-2 text-sm font-semibold text-ink transition-all hover:bg-gold-light active:scale-[0.97] disabled:cursor-not-allowed disabled:bg-stone-700 disabled:text-stone-400"
-            >
-              Ask
-            </button>
+            {pending ? (
+              <button
+                onClick={stop}
+                className="shrink-0 rounded-md border border-stone-600 px-4 py-2 text-sm font-semibold text-stone-200 transition-all hover:border-stone-400 active:scale-[0.97]"
+              >
+                Stop
+              </button>
+            ) : (
+              <button
+                onClick={() => submit(input)}
+                disabled={input.trim().length === 0}
+                className="shrink-0 rounded-md bg-gold px-4 py-2 text-sm font-semibold text-ink transition-all hover:bg-gold-light active:scale-[0.97] disabled:cursor-not-allowed disabled:bg-stone-700 disabled:text-stone-400"
+              >
+                Ask
+              </button>
+            )}
           </div>
           <p className="mx-auto mt-2 max-w-3xl text-center text-[11px] leading-relaxed text-stone-500">
             LegalBuddy can make mistakes. Check important claims against the linked act.

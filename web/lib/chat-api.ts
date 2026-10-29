@@ -37,6 +37,8 @@ export interface StreamOptions {
   initialGraceMs?: number;
   /** Max silence between events once tokens flow. */
   idleMs?: number;
+  /** Abort the in-flight request, e.g. when the user hits Stop. */
+  signal?: AbortSignal;
 }
 
 const DEFAULT_GRACE_MS = 150_000;
@@ -66,6 +68,7 @@ export async function* streamChat(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question }),
+      signal: opts.signal,
     });
   } catch {
     throw new ChatStreamError("answer service unreachable");
