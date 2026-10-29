@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -37,7 +38,9 @@ def main() -> None:
     args = ap.parse_args()
 
     hits = 0
-    for question, expected in GOLDEN:
+    for n, (question, expected) in enumerate(GOLDEN):
+        if n:
+            time.sleep(25)  # respect Voyage 3 RPM free-tier limit
         try:
             res = retrieve(question, limit=args.limit)
         except Exception as exc:  # noqa: BLE001
