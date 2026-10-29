@@ -116,7 +116,7 @@ export default function Landing() {
             <div className="mt-7 flex flex-wrap gap-3">
               <Link
                 href="/chat"
-                className="rounded-md bg-gold px-5 py-2.5 text-sm font-semibold text-ink transition-colors hover:bg-gold-light"
+                className="rounded-md bg-gold px-5 py-2.5 text-sm font-semibold text-ink transition-all hover:bg-gold-light active:scale-[0.97]"
               >
                 Ask a question
               </Link>
@@ -249,11 +249,11 @@ export default function Landing() {
           <Faq />
         </div>
         <div className="mt-10 rounded-xl border border-gold/40 bg-stone-900/40 p-6 text-center">
-          <Logo size={44} badge />
+          <Logo size={44} />
           <p className="mt-3 font-display text-xl text-stone-50">Stop guessing. Start citing.</p>
           <Link
             href="/chat"
-            className="mt-4 inline-block rounded-md bg-gold px-5 py-2.5 text-sm font-semibold text-ink transition-colors hover:bg-gold-light"
+            className="mt-4 inline-block rounded-md bg-gold px-5 py-2.5 text-sm font-semibold text-ink transition-all hover:bg-gold-light active:scale-[0.97]"
           >
             Try it free
           </Link>

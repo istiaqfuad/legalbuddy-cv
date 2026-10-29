@@ -193,11 +193,14 @@ export default function Chat() {
           <button
             onClick={() => send(input)}
             disabled={pending || input.trim().length === 0}
-            className="shrink-0 rounded-md bg-gold px-4 py-2 text-sm font-semibold text-ink transition-colors hover:bg-gold-light disabled:cursor-not-allowed disabled:bg-stone-700 disabled:text-stone-400"
+            className="shrink-0 rounded-md bg-gold px-4 py-2 text-sm font-semibold text-ink transition-all hover:bg-gold-light active:scale-[0.97] disabled:cursor-not-allowed disabled:bg-stone-700 disabled:text-stone-400"
           >
             Ask
           </button>
         </div>
+        <p className="mx-auto mt-2 max-w-3xl text-center text-[11px] leading-relaxed text-stone-500">
+          LegalBuddy can make mistakes. Check important claims against the linked act.
+        </p>
       </div>
     </div>
   );
