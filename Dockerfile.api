@@ -13,6 +13,10 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY src ./src
 RUN uv sync --frozen --no-dev
 
+# Bake the FastEmbed BM25 model into the image so fresh containers never
+# hit the Hugging Face Hub at startup (no download warning, faster boot).
+RUN uv run python -c "from fastembed import SparseTextEmbedding; SparseTextEmbedding('Qdrant/bm25')"
+
 EXPOSE 8000
 
 HEALTHCHECK --interval=10s --timeout=5s --retries=18 \

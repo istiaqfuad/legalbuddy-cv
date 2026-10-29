@@ -8,17 +8,24 @@
 
 import { create } from "zustand";
 import { streamChat } from "@/lib/chat-api";
-import type { ChatMessage } from "@/lib/types";
+import type { ChatMessage, Citation } from "@/lib/types";
 
 interface ChatState {
   messages: ChatMessage[];
   pending: boolean;
   failed: boolean;
   flash: number | null;
+  /** Sidebar source list. `citations` belongs to the message that opened it. */
+  sidebarOpen: boolean;
+  sidebarPinned: boolean;
+  sidebarCitations: Citation[];
   expandedRef: number | null;
   send: (question: string) => Promise<void>;
   dismissError: () => void;
-  jumpTo: (ref: number) => void;
+  /** Open the sidebar on `citations`, expanding only `ref` (null = all shut). */
+  openSources: (citations: Citation[], ref: number | null) => void;
+  closeSidebar: () => void;
+  togglePin: () => void;
   toggleSource: (ref: number) => void;
 }
 
@@ -37,6 +44,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   pending: false,
   failed: false,
   flash: null,
+  sidebarOpen: false,
+  sidebarPinned: false,
+  sidebarCitations: [],
   expandedRef: null,
 
   dismissError: () => set({ failed: false }),
@@ -44,14 +54,18 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   toggleSource: (ref) =>
     set((s) => ({ expandedRef: s.expandedRef === ref ? null : ref })),
 
-  jumpTo: (ref) => {
-    set({ flash: ref, expandedRef: ref });
-    document
-      .getElementById(`cite-card-${ref}`)
-      ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    if (flashTimer) clearTimeout(flashTimer);
-    flashTimer = setTimeout(() => set({ flash: null }), 1800);
+  openSources: (citations, ref) => {
+    set({ sidebarOpen: true, sidebarCitations: citations, expandedRef: ref });
+    if (ref !== null) {
+      set({ flash: ref });
+      if (flashTimer) clearTimeout(flashTimer);
+      flashTimer = setTimeout(() => set({ flash: null }), 1800);
+    }
   },
+
+  closeSidebar: () => set({ sidebarOpen: false }),
+
+  togglePin: () => set((s) => ({ sidebarPinned: !s.sidebarPinned })),
 
   send: async (question) => {
     const q = question.trim();
