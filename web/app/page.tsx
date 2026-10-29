@@ -4,55 +4,59 @@ import Logo from "@/components/logo";
 import SiteFooter from "@/components/site-footer";
 import SiteHeader from "@/components/site-header";
 
-async function getIndexStatus(): Promise<{ points: number | null; live: boolean }> {
-  const base = process.env.API_INTERNAL_URL ?? "http://localhost:8000";
-  try {
-    const res = await fetch(`${base}/health`, { cache: "no-store", signal: AbortSignal.timeout(8000) });
-    if (!res.ok) return { points: null, live: false };
-    const data = await res.json();
-    return {
-      points: typeof data.points === "number" ? data.points : null,
-      live: data.status === "ok",
-    };
-  } catch {
-    return { points: null, live: false };
-  }
-}
-
 const STEPS = [
   {
     n: "01",
-    title: "Ask like you think",
-    body: "Type a plain question — English, Bangla, or mixed mid-sentence. No keywords, no section numbers, no language toggle.",
+    title: "Ask like you'd ask a friend",
+    body: "No legal keywords needed. Just describe the problem in your own words. English, Bangla, or both mixed together.",
   },
   {
     n: "02",
-    title: "Sections are retrieved",
-    body: "Hybrid dense + sparse search scans every ingested provision and ranks the exact sections that answer you.",
+    title: "We find the exact sections",
+    body: "LegalBuddy searches the statute books and pulls the provisions that speak to your question. Not blog posts or opinions. The law itself.",
   },
   {
     n: "03",
-    title: "Answer with receipts",
-    body: "A grounded reply where each claim ends in [1], [2] — each tied to a card quoting the section and linking the act.",
+    title: "You get proof, not promises",
+    body: "Every claim in the answer points to a cited section you can read yourself, with a link to the full act.",
+  },
+];
+
+const WHO = [
+  {
+    title: "Renters",
+    body: "Deposit fights, eviction threats, repairs your landlord keeps ignoring.",
+  },
+  {
+    title: "Students",
+    body: "Cite the exact section in assignments and moots instead of quoting a textbook's summary.",
+  },
+  {
+    title: "Journalists",
+    body: "Quote the provision itself, not someone's interpretation of it.",
+  },
+  {
+    title: "Small businesses",
+    body: "Licenses, contracts, and unpaid dues, without keeping a lawyer on retainer.",
   },
 ];
 
 const FEATURES = [
   {
-    title: "Section-level citations",
-    body: "Act title and year, section number and heading, the relied-on excerpt, and a link to the full act — on every cited section.",
+    title: "Shows its work",
+    body: "Every important claim ends in [1], [2]. Each one is a card with the act, the section, the quoted passage, and a link.",
   },
   {
-    title: "Truly bilingual",
-    body: "Ask in Bangla, get an answer grounded in an English act — or the reverse. Cross-language retrieval is the default, not a mode.",
+    title: "Speaks your language",
+    body: "Ask in Bangla, get grounded in an English act. Mix both mid-sentence. There's nothing to configure.",
   },
   {
-    title: "Honest when unsure",
-    body: "If no retrieved section supports an answer, LegalBuddy says so plainly instead of inventing law. Silence beats hallucination.",
+    title: "Admits what it doesn't know",
+    body: "If no section covers your question, it says so plainly. A missing answer beats a made-up one.",
   },
   {
-    title: "Repeal-aware index",
-    body: "Repealed provisions are filtered out of retrieval, so dead law never masquerades as current advice.",
+    title: "Ignores dead law",
+    body: "Repealed provisions stay out of your answers, so you're never quoted something that no longer applies.",
   },
 ];
 
@@ -61,7 +65,7 @@ const TIERS = [
     name: "Citizen",
     price: "Free",
     per: "for everyone",
-    blurb: "Look up the law that governs your everyday life.",
+    blurb: "For everyday run-ins with the rules: rent, traffic, paperwork.",
     cta: "Start chatting",
     href: "/chat",
     soon: false,
@@ -71,7 +75,7 @@ const TIERS = [
     name: "Researcher",
     price: "৳500",
     per: "per month",
-    blurb: "For students, journalists, and chamber juniors.",
+    blurb: "For students, journalists, and chamber juniors who live in the books.",
     cta: "Coming soon",
     href: "/chat",
     soon: true,
@@ -81,7 +85,7 @@ const TIERS = [
     name: "Institution",
     price: "Custom",
     per: "annual",
-    blurb: "For firms, NGOs, and newsrooms with heavy use.",
+    blurb: "For firms, NGOs, and newsrooms with serious volume.",
     cta: "Coming soon",
     href: "/chat",
     soon: true,
@@ -89,9 +93,7 @@ const TIERS = [
   },
 ];
 
-export default async function Landing() {
-  const { points, live } = await getIndexStatus();
-
+export default function Landing() {
   return (
     <div className="min-h-screen bg-ink">
       <SiteHeader />
@@ -101,21 +103,15 @@ export default async function Landing() {
         <div className="grid items-center gap-10 md:grid-cols-[1.1fr_0.9fr]">
           <div className="motion-safe:animate-[rise_0.7s_ease-out_both]">
             <p className="inline-flex items-center gap-2 rounded-full border border-stone-800 bg-stone-900/60 px-3 py-1 text-xs text-stone-400">
-              <span
-                className={`inline-block size-1.5 rounded-full ${
-                  live ? "bg-emerald-400 motion-safe:animate-pulse" : "bg-stone-500"
-                }`}
-              />
-              {live && points !== null
-                ? `${points.toLocaleString()} sections indexed and counting`
-                : "Index warming up"}
+              <span className="inline-block size-1.5 rounded-full bg-gold" />
+              Built on the actual statute books
             </p>
             <h1 className="mt-5 font-display text-4xl leading-[1.1] text-stone-50 sm:text-5xl">
               Know what the law <span className="text-gold">actually says</span>.
             </h1>
             <p className="mt-4 max-w-md text-base leading-relaxed text-stone-400">
-              Ask about Bangladeshi law in your own words. LegalBuddy finds the exact statute
-              sections and answers with citations you can check — never vibes.
+              LegalBuddy reads Bangladesh&apos;s laws for you and points to the exact section
+              behind every answer, in English or Bangla.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
               <Link
@@ -140,41 +136,44 @@ export default async function Landing() {
           >
             <p className="text-xs font-semibold tracking-wider text-stone-500 uppercase">Example</p>
             <p className="mt-2 rounded-lg bg-gold px-3.5 py-2.5 text-sm text-ink">
-              Which law lets the government create new districts?
+              খুনের শাস্তি কী?
             </p>
             <p className="mt-3 rounded-lg border border-stone-800 bg-ink px-3.5 py-2.5 text-sm leading-relaxed text-stone-300">
-              The government may divide the country into districts… <span className="font-semibold text-gold">[1]</span>
+              The Penal Code answers this in a single section. <span className="font-semibold text-gold">[1]</span>
             </p>
             <div className="mt-2 rounded-lg border border-stone-800 bg-ink p-3">
               <p className="text-xs font-semibold text-stone-200">
-                [1] Section 3 — Formation of districts
+                [1] Section 302: Punishment for murder
               </p>
-              <p className="mt-0.5 text-xs text-stone-500">The Districts Act (No. II of 1836)</p>
+              <p className="mt-0.5 text-xs text-stone-500">The Penal Code, 1860 (XLV of 1860)</p>
               <p className="mt-1.5 border-l-2 border-gold/60 pl-2 text-xs leading-relaxed text-stone-400">
-                “…it shall be lawful for the Government to divide…”
+                “…shall be punished with death, or imprisonment for life…”
               </p>
             </div>
           </div>
         </div>
 
-        <dl className="mt-12 grid grid-cols-3 gap-4 border-t border-stone-800/80 pt-6">
-          {[
-            ["1,484", "acts of Parliament indexed"],
-            ["EN + বাংলা", "ask in either, or both at once"],
-            ["100%", "of claims backed by a citation"],
-          ].map(([v, l]) => (
-            <div key={l}>
-              <dt className="sr-only">{l}</dt>
-              <dd className="font-display text-2xl text-stone-100 sm:text-3xl">{v}</dd>
-              <dd className="mt-1 text-xs text-stone-500 sm:text-sm">{l}</dd>
-            </div>
-          ))}
-        </dl>
+        {/* Who it's for */}
+        <div className="mt-12 border-t border-stone-800/80 pt-6">
+          <p className="text-xs font-semibold tracking-wider text-stone-500 uppercase">
+            Made for real headaches
+          </p>
+          <dl className="mt-4 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {WHO.map((w) => (
+              <div key={w.title}>
+                <dt className="font-medium text-stone-100">{w.title}</dt>
+                <dd className="mt-1 text-sm leading-relaxed text-stone-400">{w.body}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
       </section>
 
       {/* How it works */}
       <section id="how" className="mx-auto max-w-5xl scroll-mt-20 px-4 py-12 sm:px-6">
-        <h2 className="font-display text-2xl text-stone-50 sm:text-3xl">From question to proof</h2>
+        <h2 className="font-display text-2xl text-stone-50 sm:text-3xl">
+          An answer you can check
+        </h2>
         <ol className="mt-6 divide-y divide-stone-800/80 border-y border-stone-800/80">
           {STEPS.map((s) => (
             <li key={s.n} className="grid gap-1 py-5 sm:grid-cols-[64px_220px_1fr] sm:gap-6">
@@ -188,7 +187,7 @@ export default async function Landing() {
 
       {/* Features */}
       <section id="features" className="mx-auto max-w-5xl scroll-mt-20 px-4 py-12 sm:px-6">
-        <h2 className="font-display text-2xl text-stone-50 sm:text-3xl">Why cited answers win</h2>
+        <h2 className="font-display text-2xl text-stone-50 sm:text-3xl">Why people trust it</h2>
         <div className="mt-6 grid gap-px overflow-hidden rounded-xl border border-stone-800/80 bg-stone-800/80 sm:grid-cols-2">
           {FEATURES.map((f) => (
             <div key={f.title} className="bg-ink p-6">

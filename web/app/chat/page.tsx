@@ -4,26 +4,23 @@ import SiteHeader from "@/components/site-header";
 // Live index status must never be prerendered at build time.
 export const dynamic = "force-dynamic";
 
-async function getIndexStatus(): Promise<{ points: number | null; live: boolean }> {
+async function getIndexStatus(): Promise<{ live: boolean }> {
   const base = process.env.API_INTERNAL_URL ?? "http://localhost:8000";
   try {
     const res = await fetch(`${base}/health`, {
       cache: "no-store",
       signal: AbortSignal.timeout(8000),
     });
-    if (!res.ok) return { points: null, live: false };
+    if (!res.ok) return { live: false };
     const data = await res.json();
-    return {
-      points: typeof data.points === "number" ? data.points : null,
-      live: data.status === "ok",
-    };
+    return { live: data.status === "ok" };
   } catch {
-    return { points: null, live: false };
+    return { live: false };
   }
 }
 
 export default async function ChatPage() {
-  const { points, live } = await getIndexStatus();
+  const { live } = await getIndexStatus();
 
   return (
     <div className="flex min-h-screen flex-col bg-ink">
@@ -35,9 +32,7 @@ export default async function ChatPage() {
               live ? "bg-emerald-400 motion-safe:animate-pulse" : "bg-stone-500"
             }`}
           />
-          {live && points !== null
-            ? `${points.toLocaleString()} sections indexed`
-            : "index offline — answers may be limited"}
+          {live ? "Connected to the law library" : "Having trouble reaching the library"}
         </div>
       </div>
 

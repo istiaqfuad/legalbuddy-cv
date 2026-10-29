@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import type { ChatMessage, Citation } from "@/lib/types";
 
 const SUGGESTIONS = [
-  "Which law allows the government to create new districts, and what does it say?",
-  "What is the punishment for murder under the Penal Code?",
+  "Can my landlord evict me without any notice?",
   "খুনের শাস্তি কী?",
+  "My salary is two months late. What does the law say?",
 ];
 
 /** Shown for every failure. Upstream details stay in server logs. */
@@ -33,7 +33,7 @@ function CitationCard({ citation }: { citation: Citation }) {
     <article className="rounded-lg border border-stone-800 bg-stone-900/60 p-3">
       <p className="text-[13px] font-semibold text-stone-100">
         [{citation.ref}] {heading}
-        {citation.section_title ? ` — ${citation.section_title}` : ""}
+        {citation.section_title ? `: ${citation.section_title}` : ""}
       </p>
       <p className="mt-0.5 text-xs text-stone-500">
         {citation.act_title} ({citation.act_no} of {citation.act_year})
@@ -114,12 +114,10 @@ export default function Chat() {
       <div className="flex-1 space-y-5 overflow-y-auto px-4 py-6 sm:px-6">
         {messages.length === 0 && !pending ? (
           <div className="mx-auto max-w-xl pt-6">
-            <p className="font-display text-xl text-stone-100">
-              Ask in English, Bangla, or both at once.
-            </p>
+            <p className="font-display text-xl text-stone-100">What&apos;s going on? Ask it plainly.</p>
             <p className="mt-2 text-sm leading-relaxed text-stone-400">
-              Every claim is grounded in retrieved statute sections. Each cited section shows its
-              act, section number, the exact text relied on, and a link to the full act.
+              Describe the problem in your own words, in English, Bangla, or both. You&apos;ll
+              get an answer that points to the exact sections behind it.
             </p>
             <div className="mt-4 space-y-2">
               {SUGGESTIONS.map((s) => (

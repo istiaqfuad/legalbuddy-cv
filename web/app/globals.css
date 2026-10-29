@@ -17,7 +17,7 @@ body {
   color: #0c0a09;
 }
 
-/* Single hero entrance — used once per page, never on scroll. */
+/* Single hero entrance, used once per page, never on scroll. */
 @keyframes rise {
   from {
     opacity: 0;

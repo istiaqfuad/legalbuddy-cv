@@ -10,7 +10,7 @@ export default function SiteFooter() {
           <span className="font-display text-stone-300">LegalBuddy</span>
         </span>
         <p className="sm:ml-2">
-          Research assistance only — not a substitute for a lawyer. Always verify against the
+          Research assistance only, not a substitute for a lawyer. Always verify against the
           linked act.
         </p>
         <Link href="/chat" className="transition-colors hover:text-gold sm:ml-auto">

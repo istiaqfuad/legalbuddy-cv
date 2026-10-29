@@ -5,23 +5,23 @@ import { useState } from "react";
 const ITEMS = [
   {
     q: "Where do the answers come from?",
-    a: "Only from the text of Bangladeshi statutes published on bdlaws.minlaw.gov.bd, chunked section-by-section and searched with hybrid dense + sparse retrieval. If the evidence doesn't support an answer, LegalBuddy says so instead of guessing.",
+    a: "Straight from Bangladesh's statute books: the acts published on bdlaws. LegalBuddy searches them section by section, then answers only from what it finds. If nothing relevant turns up, it tells you that instead of guessing.",
   },
   {
-    q: "Which language should I ask in?",
-    a: "Whichever comes naturally — English, Bangla, or a mix of both in one question. There is no language setting; every query is embedded and matched across both languages automatically, and the answer follows your question's language.",
+    q: "Do I need to ask in a particular language?",
+    a: "No. English, Bangla, or a mix, whatever's easiest. There's no setting to flip; the answer just follows the language you asked in.",
   },
   {
-    q: "What exactly is a citation here?",
-    a: "Each cited section shows the act title and year, the section number and heading, the exact excerpt the answer relied on, and a link to the full act. The section label plus excerpt pinpoints the provision, since bdlaws pages have no per-section links.",
+    q: "What does a citation actually give me?",
+    a: "The act and year, the section number and heading, the exact passage the answer relied on, and a link to the full act so you can read around it.",
   },
   {
-    q: "Can I rely on this instead of a lawyer?",
-    a: "No. LegalBuddy is research assistance: it finds and quotes the relevant provisions fast, but it can't weigh facts, jurisdiction, or amendments the way counsel does. Every answer ends with that reminder — verify against the linked act.",
+    q: "Can this replace my lawyer?",
+    a: "No, and it won't pretend otherwise. It's the fast first step: finding and quoting the right provisions. What those provisions mean for your situation is still a conversation for counsel.",
   },
   {
-    q: "Is my question stored anywhere?",
-    a: "Questions pass through the answer service to retrieve statutes and generate the reply; this demo keeps no accounts and no chat history. Don't paste private case details you'd be uncomfortable sharing.",
+    q: "Do you keep my questions?",
+    a: "This demo keeps no accounts and no chat history. Still, don't paste anything private: case details, names, NIDs. Ask about the rule, not your case.",
   },
 ];
 

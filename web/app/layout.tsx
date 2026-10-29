@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "LegalBuddy — Know what the law actually says",
+  title: "LegalBuddy: Know what the law actually says",
   description:
     "Ask questions about Bangladeshi law in English, Bangla, or both. Every answer cites the exact statute sections it relies on.",
 };
