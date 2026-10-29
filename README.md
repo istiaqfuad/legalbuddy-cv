@@ -16,6 +16,22 @@ Key names live in [.env.example](.env.example): Qdrant Cloud (`QDRANT_URL`,
 `QDRANT_API_KEY`, `COLLECTION_NAME`), Voyage AI (`VOYAGE_API_KEY`,
 `EMBEDDING_MODEL=voyage-4`), Baseten (`BASETEN_API_KEY`).
 
+## Chatbot (single command)
+
+```bash
+docker compose up --build
+```
+
+Then open [http://localhost:3001](http://localhost:3001) in a browser.
+Host ports are 3001 (web) / 8001 (api) to avoid clashing with other local
+stacks; the containers talk to each other as `web` → `http://api:8000`.
+Uses the same repo `.env` as ingestion — no extra config.
+
+- `src/legalbuddy/api.py` — FastAPI: `POST /api/chat` (cited answers),
+  `GET /health` (index status)
+- `web/` — Next.js + Tailwind chat UI; `/api/chat` route proxies to the
+  API server-side so keys never reach the browser
+
 ## Layout
 
 - `src/legalbuddy/chunking.py` — structure-aware statute chunker (section =
