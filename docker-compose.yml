@@ -23,8 +23,15 @@ services:
   web:
     build:
       context: ./web
+    env_file:
+      - .env
     environment:
       API_INTERNAL_URL: http://api:8000
+      NEXTAUTH_URL: http://localhost:3001
+    # Node's fetch path stalls on this sandbox's IPv6 route to Neon;
+    # pin the Neon HTTP gateway to IPv4 (verified 2026-10-29).
+    extra_hosts:
+      - "api.c-6.us-east-2.aws.neon.tech:52.14.39.200"
     ports:
       - "3001:3000"
     depends_on:

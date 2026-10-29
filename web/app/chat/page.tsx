@@ -1,3 +1,6 @@
+import { redirect } from "next/navigation";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import Chat from "@/components/chat/Chat";
 import SiteHeader from "@/components/site-header";
 
@@ -20,6 +23,8 @@ async function getIndexStatus(): Promise<{ live: boolean }> {
 }
 
 export default async function ChatPage() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) redirect("/login");
   const { live } = await getIndexStatus();
 
   return (

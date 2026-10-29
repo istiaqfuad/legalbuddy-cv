@@ -1,4 +1,5 @@
 import Link from "next/link";
+import AuthButton from "./auth-button";
 import Logo from "./logo";
 
 const NAV = [
@@ -23,12 +24,15 @@ export default function SiteHeader() {
             </Link>
           ))}
         </nav>
-        <Link
-          href="/chat"
-          className="ml-auto rounded-md bg-gold px-4 py-2 text-sm font-semibold text-ink transition-all hover:bg-gold-light active:scale-[0.97] md:ml-6"
-        >
-          Open app
-        </Link>
+        <div className="ml-auto flex items-center gap-2 md:ml-6 md:gap-3">
+          <Link
+            href="/chat"
+            className="rounded-md bg-gold px-4 py-2 text-sm font-semibold text-ink transition-all hover:bg-gold-light active:scale-[0.97]"
+          >
+            Open app
+          </Link>
+          <AuthButton />
+        </div>
       </div>
     </header>
   );
