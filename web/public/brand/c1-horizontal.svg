@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 248 64" role="img" aria-labelledby="c1ht c1hd">
+  <title id="c1ht">LegalBuddy Concept 1 — horizontal lockup</title>
+  <desc id="c1hd">Scales-and-tome icon beside a gold serif LegalBuddy wordmark</desc>
+  <g fill="none" stroke="#C9A227" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="32" cy="8" r="2.4" fill="#C9A227" stroke="none"/>
+    <path d="M32 11 V44"/>
+    <path d="M14 18 H50"/>
+    <circle cx="14" cy="18" r="1.8" fill="#C9A227" stroke="none"/>
+    <circle cx="32" cy="18" r="1.8" fill="#C9A227" stroke="none"/>
+    <circle cx="50" cy="18" r="1.8" fill="#C9A227" stroke="none"/>
+    <path d="M14 18 L9.5 31 M14 18 L18.5 31"/>
+    <path d="M8 31 Q14 37.5 20 31"/>
+    <path d="M50 18 L45.5 31 M50 18 L54.5 31"/>
+    <path d="M44 31 Q50 37.5 56 31"/>
+    <path d="M21 46 Q26.5 43 32 46 Q37.5 43 43 46 V52 Q37.5 49 32 52 Q26.5 49 21 52 Z"/>
+    <path d="M32 46 V52"/>
+  </g>
+  <text x="74" y="41" font-family="Georgia, 'Times New Roman', serif" font-size="30" fill="#F5EFE0">LegalBuddy</text>
+</svg>

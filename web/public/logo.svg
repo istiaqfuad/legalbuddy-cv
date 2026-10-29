@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="c1t c1d">
+  <title id="c1t">LegalBuddy Concept 1 — Scales and Tome</title>
+  <desc id="c1d">Balanced scales of justice rising from an open book, gold on charcoal</desc>
+  <defs>
+    <g id="c1mark" fill="none" stroke="#C9A227" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="32" cy="8" r="2.4" fill="#C9A227" stroke="none"/>
+      <path d="M32 11 V44"/>
+      <path d="M14 18 H50"/>
+      <circle cx="14" cy="18" r="1.8" fill="#C9A227" stroke="none"/>
+      <circle cx="32" cy="18" r="1.8" fill="#C9A227" stroke="none"/>
+      <circle cx="50" cy="18" r="1.8" fill="#C9A227" stroke="none"/>
+      <path d="M14 18 L9.5 31 M14 18 L18.5 31"/>
+      <path d="M8 31 Q14 37.5 20 31"/>
+      <path d="M50 18 L45.5 31 M50 18 L54.5 31"/>
+      <path d="M44 31 Q50 37.5 56 31"/>
+      <path d="M21 46 Q26.5 43 32 46 Q37.5 43 43 46 V52 Q37.5 49 32 52 Q26.5 49 21 52 Z"/>
+      <path d="M32 46 V52"/>
+    </g>
+  </defs>
+  <rect x="1.5" y="1.5" width="61" height="61" rx="14" fill="#0C0A09"/>
+  <use href="#c1mark"/>
+</svg>

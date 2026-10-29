@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="c2t c2d">
+  <title id="c2t">LegalBuddy Concept 2 — Court Seal</title>
+  <desc id="c2d">A court-seal ring with circular LegalBuddy lettering around a minimal scales mark</desc>
+  <defs>
+    <path id="c2arc" d="M32,32 m-24,0 a24,24 0 1,1 48,0 a24,24 0 1,1 -48,0"/>
+    <g id="c2mark" fill="none" stroke="#C9A227" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="32" cy="32" r="29" stroke-width="2.5"/>
+      <circle cx="32" cy="32" r="19" stroke-width="1"/>
+      <circle cx="32" cy="22" r="1.8" fill="#C9A227" stroke="none"/>
+      <path d="M32 24 V44" stroke-width="3"/>
+      <path d="M23 28 H41" stroke-width="3"/>
+      <circle cx="23" cy="28" r="1.3" fill="#C9A227" stroke="none"/>
+      <circle cx="41" cy="28" r="1.3" fill="#C9A227" stroke="none"/>
+      <path d="M23 28 L20 35 M23 28 L26 35" stroke-width="2.4"/>
+      <path d="M18.5 35 Q23 39 27.5 35" stroke-width="2.4"/>
+      <path d="M41 28 L38 35 M41 28 L44 35" stroke-width="2.4"/>
+      <path d="M36.5 35 Q41 39 45.5 35" stroke-width="2.4"/>
+    </g>
+  </defs>
+  <rect x="1.5" y="1.5" width="61" height="61" rx="14" fill="#0C0A09"/>
+  <use href="#c2mark"/>
+  <text font-family="Georgia, 'Times New Roman', serif" font-size="6.5" letter-spacing="1.5" fill="#E3C565">
+    <textPath href="#c2arc" textLength="148" lengthAdjust="spacingAndGlyphs">LEGALBUDDY • DHAKA • JUSTICE •</textPath>
+  </text>
+</svg>

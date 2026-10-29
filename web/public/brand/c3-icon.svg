@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="c3t c3d">
+  <title id="c3t">LegalBuddy Concept 3 — Pillar L</title>
+  <desc id="c3d">A serif letter L whose stem rises into a scale beam with two hanging pans</desc>
+  <defs>
+    <g id="c3mark">
+      <text x="12" y="50" font-family="Georgia, 'Times New Roman', serif" font-size="46" font-weight="700" fill="#C9A227">L</text>
+      <g fill="none" stroke="#C9A227" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 10 H54"/>
+        <circle cx="22" cy="10" r="1.8" fill="#C9A227" stroke="none"/>
+        <circle cx="54" cy="10" r="1.8" fill="#C9A227" stroke="none"/>
+        <path d="M34 10 L31 20 M34 10 L37 20"/>
+        <path d="M29.5 20 Q34 24 38.5 20"/>
+        <path d="M50 10 L47 20 M50 10 L53 20"/>
+        <path d="M45.5 20 Q50 24 54.5 20"/>
+      </g>
+    </g>
+  </defs>
+  <rect x="1.5" y="1.5" width="61" height="61" rx="14" fill="#0C0A09"/>
+  <use href="#c3mark"/>
+</svg>

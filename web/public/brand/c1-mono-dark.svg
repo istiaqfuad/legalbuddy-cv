@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="c1mdt c1mdd">
+  <title id="c1mdt">LegalBuddy mark — monochrome dark</title>
+  <desc id="c1mdd">Scales-and-tome mark in charcoal for light backgrounds</desc>
+  <g fill="none" stroke="#1C1917" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="32" cy="8" r="2.4" fill="#1C1917" stroke="none"/>
+    <path d="M32 11 V44"/>
+    <path d="M14 18 H50"/>
+    <circle cx="14" cy="18" r="1.8" fill="#1C1917" stroke="none"/>
+    <circle cx="32" cy="18" r="1.8" fill="#1C1917" stroke="none"/>
+    <circle cx="50" cy="18" r="1.8" fill="#1C1917" stroke="none"/>
+    <path d="M14 18 L9.5 31 M14 18 L18.5 31"/>
+    <path d="M8 31 Q14 37.5 20 31"/>
+    <path d="M50 18 L45.5 31 M50 18 L54.5 31"/>
+    <path d="M44 31 Q50 37.5 56 31"/>
+    <path d="M21 46 Q26.5 43 32 46 Q37.5 43 43 46 V52 Q37.5 49 32 52 Q26.5 49 21 52 Z"/>
+    <path d="M32 46 V52"/>
+  </g>
+</svg>
