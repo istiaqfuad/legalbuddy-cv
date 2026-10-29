@@ -1,0 +1,33 @@
+# One command: docker compose up --build
+# Uses the repo .env for QDRANT_URL, QDRANT_API_KEY, VOYAGE_API_KEY,
+# BASETEN_API_KEY (same file the ingestion pipeline uses).
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    env_file:
+      - .env
+    environment:
+      FRONTEND_URL: http://localhost:3001
+    ports:
+      - "8001:8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+
+  web:
+    build:
+      context: ./web
+    environment:
+      API_INTERNAL_URL: http://api:8000
+    ports:
+      - "3001:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
