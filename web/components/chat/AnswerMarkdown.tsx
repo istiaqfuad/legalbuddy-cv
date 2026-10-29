@@ -87,7 +87,7 @@ export default function AnswerMarkdown({
               <button
                 onClick={() => onCite(ref)}
                 title={title ?? undefined}
-                className="font-semibold text-gold-light underline-offset-2 hover:text-gold hover:underline"
+                className="cursor-pointer font-semibold text-gold-light underline-offset-2 hover:text-gold hover:underline"
               >
                 {children}
               </button>

@@ -29,7 +29,7 @@ export default function SourceCard({
       <button
         onClick={onToggle}
         aria-expanded={open}
-        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
+        className="flex w-full cursor-pointer items-center justify-between gap-2 px-3 py-2 text-left"
       >
         <span className="min-w-0">
           <span className="block truncate text-[13px] font-semibold text-stone-100">

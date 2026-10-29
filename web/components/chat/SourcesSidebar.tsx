@@ -46,7 +46,7 @@ export default function SourcesSidebar() {
           onClick={togglePin}
           aria-pressed={pinned}
           title={pinned ? "Unpin panel" : "Pin panel to the side"}
-          className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+          className={`cursor-pointer rounded-md px-2 py-1 text-xs font-medium transition-colors ${
             pinned
               ? "bg-gold/15 text-gold-light"
               : "text-stone-500 hover:bg-stone-800 hover:text-stone-200"
@@ -57,7 +57,7 @@ export default function SourcesSidebar() {
         <button
           onClick={closeSidebar}
           aria-label="Close sources panel"
-          className="rounded-md px-2 py-1 text-lg leading-none text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-200"
+          className="cursor-pointer rounded-md px-2 py-1 text-lg leading-none text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-200"
         >
           ×
         </button>

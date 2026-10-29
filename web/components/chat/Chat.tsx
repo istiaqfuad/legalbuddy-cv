@@ -86,7 +86,7 @@ export default function Chat() {
                   {!pending && msg.citations && msg.citations.length > 0 ? (
                     <button
                       onClick={() => openSources(msg.citations ?? [], null)}
-                      className="mt-2 text-xs font-medium text-stone-500 transition-colors hover:text-gold-light"
+                      className="mt-2 cursor-pointer text-xs font-medium text-stone-500 transition-colors hover:text-gold-light"
                     >
                       Sources · {msg.citations.length} cited sections →
                     </button>
