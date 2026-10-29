@@ -135,6 +135,27 @@ def is_void_section(content: str) -> bool:
     return bool(_VOID_SECTION.search(content or ""))
 
 
+_STAR_RUN = re.compile(r"\*{3,}")
+
+
+def normalize_text(text: str) -> str:
+    """Collapse whitespace, drop ``***`` separators, unglue footnote numbers.
+
+    bdlaws bodies carry ``or\\nimprisonment`` line-break joins and ``***``
+    visual separators; both embed and render as noise (``orimprisonment``,
+    literal ``***`` in excerpts). Footnote texts sometimes glue their marker
+    number to the first word (``94The``). Bengali-digit-led texts (``১৯৭৫
+    ...``) are never touched: the unglue rule only fires on digits directly
+    followed by a letter.
+    """
+    cleaned = _STAR_RUN.sub(" ", str(text or ""))
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    # \d covers Bengali digits too; the negated class keeps any Unicode
+    # letter but no digit, so ordinals ("3rd") and years ("১৯৭৫ ...")
+    # never split, only glued multi-digit markers ("94The").
+    return re.sub(r"^(\d{2,})(?=[^\W\d_])", r"\1 ", cleaned)
+
+
 def resolve_footnotes(content: str, footnotes: list[dict]) -> list[str]:
     """Return footnote texts whose marker number appears in the content."""
     if not content or not footnotes:
@@ -239,8 +260,8 @@ def chunk_act(act: dict, source_file: str) -> list[StatuteChunk]:
             continue
         section_title = str(sec.get("section_title", "") or "").strip()
         label = extract_section_label(raw)
-        notes = resolve_footnotes(raw, footnotes)
-        content = clean_markers(raw)
+        notes = [normalize_text(n) for n in resolve_footnotes(raw, footnotes)]
+        content = normalize_text(clean_markers(raw))
         header = build_header(act_title, act_no, act_year, label, section_title)
 
         bodies = [content] if len(content) <= MAX_CHARS else split_long_text(content)

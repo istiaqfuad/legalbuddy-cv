@@ -94,14 +94,21 @@ def _evidence_block(hits) -> tuple[str, list[Citation]]:
     return "\n\n".join(lines), citations
 
 
-def answer(question: str, language: str | None = None,
-           act_year: str | None = None, limit: int = 8) -> Answer:
-    """Retrieve evidence and generate a cited answer."""
+def stream_answer(question: str, language: str | None = None,
+                  act_year: str | None = None, limit: int = 8):
+    """Yield ``("meta", dict)``, ``("token", str)``..., then ``("done", Answer)``.
+
+    ``meta`` carries the citations up front so the UI can show what the
+    answer will stand on; tokens stream from Baseten as they arrive.
+    """
     hits = retrieve(question, language=language, act_year=act_year, limit=limit)
     if not hits.points:
-        return Answer(text="I could not verify this from the available sources.", citations=[])
+        yield ("done", Answer(text="I could not verify this from the available sources.",
+                              citations=[]))
+        return
     evidence, citations = _evidence_block(hits)
-    resp = _client().chat.completions.create(
+    yield ("meta", {"citations": citations, "model": CHAT_MODEL})
+    stream = _client().chat.completions.create(
         model=CHAT_MODEL,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -110,8 +117,31 @@ def answer(question: str, language: str | None = None,
         ],
         max_tokens=MAX_TOKENS,
         temperature=0.1,
+        stream=True,
     )
-    text = resp.choices[0].message.content or ""
+    parts: list[str] = []
+    for chunk in stream:
+        # Reasoning gateways interleave keepalive chunks with no choices;
+        # the opening chunk may carry only a role. Neither holds text.
+        if not chunk.choices:
+            continue
+        delta = getattr(chunk.choices[0].delta, "content", None) or ""
+        if delta:
+            parts.append(delta)
+            yield ("token", delta)
+    text = "".join(parts)
     if not text.strip():
         raise RuntimeError("Empty chat completion (reasoning exhausted token budget?)")
-    return Answer(text=text, citations=citations)
+    yield ("done", Answer(text=text, citations=citations))
+
+
+def answer(question: str, language: str | None = None,
+           act_year: str | None = None, limit: int = 8) -> Answer:
+    """Retrieve evidence and generate a cited answer (non-streaming)."""
+    final: Answer | None = None
+    for kind, val in stream_answer(question, language=language,
+                                   act_year=act_year, limit=limit):
+        if kind == "done":
+            final = val
+    assert final is not None
+    return final

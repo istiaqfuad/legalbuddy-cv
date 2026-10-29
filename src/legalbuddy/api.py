@@ -16,6 +16,7 @@ Env (same ``.env`` as the ingestion pipeline): ``QDRANT_URL``,
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from typing import Literal
@@ -23,6 +24,7 @@ from typing import Literal
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 load_dotenv()
@@ -104,10 +106,51 @@ def post_chat(req: ChatRequest) -> ChatResponse:
             detail="Answer generation failed. Please try again.") from None
     return ChatResponse(
         answer=ans.text,
-        citations=[CitationOut(
-            ref=c.ref, act_title=c.act_title, act_no=c.act_no, act_year=c.act_year,
-            section_label=c.section_label, section_title=c.section_title,
-            excerpt=c.excerpt, source_url=c.source_url, score=c.score,
-        ) for c in ans.citations],
+        citations=[_citation_out(c) for c in ans.citations],
         model=ans.model,
     )
+
+
+def _citation_out(c) -> CitationOut:
+    return CitationOut(
+        ref=c.ref, act_title=c.act_title, act_no=c.act_no, act_year=c.act_year,
+        section_label=c.section_label, section_title=c.section_title,
+        excerpt=c.excerpt, source_url=c.source_url, score=c.score,
+    )
+
+
+def _sse(event: str, payload: str) -> str:
+    return f"event: {event}\ndata: {payload}\n\n"
+
+
+@app.post("/api/chat/stream")
+def post_chat_stream(req: ChatRequest):
+    """Token-streaming answer as Server-Sent Events.
+
+    Events: ``meta`` (citations up front), ``token`` (text chunks),
+    ``done`` (full answer + citations), ``error`` (generic message only —
+    internals stay in server logs, since HTTP status is already sent).
+    """
+    def events():
+        try:
+            gen = chat_mod.stream_answer(req.question, language=req.language,
+                                         act_year=req.act_year, limit=req.limit)
+            for kind, val in gen:
+                if kind == "meta":
+                    yield _sse("meta", ChatResponse(
+                        answer="", model=val["model"],
+                        citations=[_citation_out(c) for c in val["citations"]],
+                    ).model_dump_json())
+                elif kind == "token":
+                    yield _sse("token", json.dumps({"t": val}))
+                elif kind == "done":
+                    yield _sse("done", ChatResponse(
+                        answer=val.text, model=val.model,
+                        citations=[_citation_out(c) for c in val.citations],
+                    ).model_dump_json())
+        except Exception:  # noqa: BLE001 — mid-stream: status is sent, emit generic error
+            log.exception("chat stream failed")
+            yield _sse("error", '{"detail": "Answer generation failed. Please try again."}')
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache",
+                                      "X-Accel-Buffering": "no"})

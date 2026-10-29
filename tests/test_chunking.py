@@ -4,10 +4,33 @@ from legalbuddy.chunking import (
     build_header,
     chunk_act,
     extract_section_label,
+    normalize_text,
     resolve_footnotes,
     split_long_text,
     stable_chunk_id,
 )
+
+
+def test_normalize_text_joins_broken_words_and_drops_star_runs():
+    assert normalize_text("death, or\nimprisonment for life") == "death, or imprisonment for life"
+    assert normalize_text("উহার অন্তর্ভুক্ত হইবে;*** (৮৪) “কাস্টমস") == "উহার অন্তর্ভুক্ত হইবে; (৮৪) “কাস্টমস"
+    assert normalize_text("  spaced\t\tout  ") == "spaced out"
+
+
+def test_normalize_text_unglues_footnote_numbers_but_keeps_years():
+    assert normalize_text("94The word “imprisonment” was substituted") == "94 The word “imprisonment” was substituted"
+    assert normalize_text("1975 সালের আইন") == "1975 সালের আইন"
+    assert normalize_text("১৯৭৫ সালের আইন") == "১৯৭৫ সালের আইন"
+
+
+def test_chunk_text_has_no_glued_words_or_star_runs():
+    act = _act(sections=[{
+        "section_content": "302. Whoever commits murder shall be punished with death, or\nimprisonment for life.***",
+    }])
+    (c,) = chunk_act(act, "x.json")
+    assert "orimprisonment" not in c.text
+    assert "***" not in c.text
+    assert "or imprisonment for life" in c.text
 
 
 def _act(**over):
