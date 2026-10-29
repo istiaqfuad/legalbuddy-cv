@@ -28,9 +28,12 @@ stacks; the containers talk to each other as `web` → `http://api:8000`.
 Uses the same repo `.env` as ingestion — no extra config.
 
 - `src/legalbuddy/api.py` — FastAPI: `POST /api/chat` (cited answers),
-  `GET /health` (index status)
+  `POST /api/chat/stream` (SSE token stream), `GET /health` (index status)
 - `web/` — Next.js + Tailwind chat UI; `/api/chat` route proxies to the
   API server-side so keys never reach the browser
+- `web/lib/chat-api.ts` — the only seam to the answer backend (SSE parsing,
+  stall watchdog); `web/stores/chat-store.ts` — zustand conversation state;
+  `web/components/chat/` — feature folder (view, citations, markdown)
 
 ## Layout
 

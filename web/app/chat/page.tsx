@@ -1,4 +1,4 @@
-import Chat from "@/components/chat";
+import Chat from "@/components/chat/Chat";
 import SiteHeader from "@/components/site-header";
 
 // Live index status must never be prerendered at build time.

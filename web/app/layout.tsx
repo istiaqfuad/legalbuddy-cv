@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
+export const viewport = {
+  themeColor: "#0c0a09",
+};
+
 export const metadata: Metadata = {
   title: "LegalBuddy: Know what the law actually says",
   description:
