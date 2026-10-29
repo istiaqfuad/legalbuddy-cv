@@ -36,7 +36,7 @@ export default async function ChatPage() {
         </div>
       </div>
 
-      <main className="mx-auto flex w-full max-w-3xl min-h-0 flex-1 flex-col">
+      <main className="mx-auto flex w-full max-w-6xl min-h-0 flex-1 flex-col">
         <Chat />
       </main>
     </div>

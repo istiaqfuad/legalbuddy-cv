@@ -69,7 +69,7 @@ export default function SourcesSidebar() {
     return (
       <aside
         aria-label="Cited sections"
-        className="hidden max-h-full w-80 shrink-0 flex-col overflow-y-auto border-l border-stone-800/80 bg-ink px-4 py-4 lg:flex"
+        className="hidden max-h-full w-[320px] shrink-0 flex-col gap-4 overflow-y-auto border-l border-stone-800/80 bg-ink px-5 py-6 lg:flex"
       >
         {header}
         {cards}
