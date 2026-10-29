@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: Georgia, "Times New Roman", "Noto Serif Bengali", serif;
+}
+
+body {
+  background: #ffffff;
+  color: #1c1917;
+}
