@@ -32,10 +32,34 @@ def estimate_tokens(text: str) -> int:
 
 DENSE_MODEL = os.environ.get("EMBEDDING_MODEL", "voyage-4")
 SPARSE_MODEL = "Qdrant/bm25"
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, "") or default)
+    except ValueError:
+        return default
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, "") or default)
+    except ValueError:
+        return default
+
+
+# The single pacing control for Voyage lives in VoyageDense: a request
+# gap (RPM) plus a rolling tokens-per-minute window (TPM). Defaults are
+# the reduced free tier (~3 RPM / 10K TPM, kept at 8K for headroom). On a
+# paid tier set VOYAGE_REQUEST_GAP_S=0 and VOYAGE_TOKENS_PER_MIN to the
+# tier limit (and optionally raise VOYAGE_MAX_TOKENS_PER_REQUEST); there
+# is deliberately no second pacer in the ingest script.
+DEFAULT_REQUEST_GAP_S = _env_float("VOYAGE_REQUEST_GAP_S", 25.0)
+DEFAULT_TOKENS_PER_MIN = _env_int("VOYAGE_TOKENS_PER_MIN", 8000)
 # Max estimated tokens per API request: with the script-aware estimator this
-# is close to billed tokens, so 3000 keeps 2-3 paced requests inside the
+# is close to billed tokens, so 3000 keeps paced requests inside the
 # 10K TPM rolling window instead of 429-looping forever.
-MAX_TOKENS_PER_REQUEST = 3000
+MAX_TOKENS_PER_REQUEST = _env_int("VOYAGE_MAX_TOKENS_PER_REQUEST", 3000)
 
 _sparse_singleton: SparseTextEmbedding | None = None
 
@@ -59,28 +83,48 @@ def encode_sparse(texts: list[str]) -> list[tuple[list[int], list[float]]]:
 
 
 class VoyageDense:
-    """Batched Voyage dense encoder with retry/backoff and per-request pacing.
+    """Batched Voyage dense encoder with retry/backoff and request pacing.
 
-    ``request_gap_s`` spaces consecutive API requests (the reduced free tier
-    allows ~3 RPM); it applies inside multi-batch ``embed`` calls too, so
-    callers pacing per *cycle* stay compliant across internal batches.
+    Pacing (the pipeline's only pacer) enforces both the request gap
+    (env ``VOYAGE_REQUEST_GAP_S``) and a rolling tokens-per-minute window
+    (env ``VOYAGE_TOKENS_PER_MIN``) before every API request, including
+    the internal batches of one ``embed`` call.
     """
 
     def __init__(self, model: str = DENSE_MODEL, batch_size: int = 64,
-                 max_retries: int = 4, request_gap_s: float = 25.0) -> None:
+                 max_retries: int = 4,
+                 request_gap_s: float | None = None,
+                 tokens_per_min: int | None = None) -> None:
         self.client = voyageai.Client(api_key=os.environ["VOYAGE_API_KEY"])
         self.model = model
         self.batch_size = batch_size
         self.max_retries = max_retries
-        self.request_gap_s = request_gap_s
+        self.request_gap_s = (DEFAULT_REQUEST_GAP_S if request_gap_s is None
+                              else request_gap_s)
+        self.tokens_per_min = (DEFAULT_TOKENS_PER_MIN if tokens_per_min is None
+                               else tokens_per_min)
         self.total_tokens = 0
         self._last_req = 0.0
+        self._window_start = time.monotonic()
+        self._window_tokens = 0
 
-    def _pace(self) -> None:
+    def _pace(self, est_tokens: int = 0) -> None:
+        now = time.monotonic()
+        if now - self._window_start >= 60:
+            self._window_start, self._window_tokens = now, 0
+        tpm = getattr(self, "tokens_per_min", DEFAULT_TOKENS_PER_MIN)
+        if tpm > 0 and self._window_tokens + est_tokens > tpm:
+            sleep_for = 60 - (now - self._window_start) + 1
+            if sleep_for > 0:
+                time.sleep(sleep_for)
+            self._window_start, self._window_tokens = time.monotonic(), 0
         gap = self.request_gap_s - (time.monotonic() - self._last_req)
         if gap > 0:
             time.sleep(gap)
         self._last_req = time.monotonic()
+
+    def _record(self, tokens: int) -> None:
+        self._window_tokens = getattr(self, "_window_tokens", 0) + tokens
 
     def _request_batches(self, texts: list[str]) -> list[list[str]]:
         """Split into request batches capped by count AND estimated tokens."""
@@ -99,17 +143,23 @@ class VoyageDense:
     def embed(self, texts: list[str], input_type: str) -> list[list[float]]:
         out: list[list[float]] = []
         for batch in self._request_batches(texts):
+            est = sum(max(estimate_tokens(t), 1) for t in batch)
             for attempt in range(self.max_retries):
                 try:
-                    self._pace()
+                    self._pace(est)
                     res = self.client.embed(batch, model=self.model, input_type=input_type)
                     break
                 except RateLimitError:
+                    # Reset the TPM window so the caller's backoff retry
+                    # does not immediately re-trip the local pacer.
+                    self._window_start, self._window_tokens = time.monotonic(), 0
                     raise  # outer loop owns rate-limit backoff; don't hammer
                 except Exception:
                     if attempt == self.max_retries - 1:
                         raise
                     time.sleep(2 ** attempt)
+            billed = res.total_tokens or est
+            self._record(billed)
             out.extend(res.embeddings)
-            self.total_tokens += res.total_tokens or 0
+            self.total_tokens += billed
         return out

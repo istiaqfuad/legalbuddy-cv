@@ -7,6 +7,12 @@
       "skillPath": "skills/baseten/SKILL.md",
       "computedHash": "254151ac3278fc7ff11177d3c3b38f69ebb77f2c206f517438f1b7a21b1ed81d"
     },
+    "deepnote": {
+      "source": "deepnote/deepnote",
+      "sourceType": "github",
+      "skillPath": "skills/deepnote/SKILL.md",
+      "computedHash": "6fa21ff442a427a8d933d00a868efe07872d9c7a86ec3a8f4e3f17b611a1a8f4"
+    },
     "langchain-rag": {
       "source": "langchain-ai/langchain-skills",
       "sourceType": "github",

@@ -25,9 +25,11 @@ Research-backed choices for this corpus (see PLAN.md section 5):
 5. **Citation-ready payload.** Every chunk carries act title/No/year,
    section label + title, amendment notes, the cleaned section text, and
    ``source_url`` so answers can cite the exact section with a link.
-6. **Repealed / empty acts skipped.** The 203 repealed acts carry zero
-   sections; embedding empty text would pollute the index. Their
-   ``is_repealed`` status stays queryable as a payload filter instead.
+6. **Repealed / empty acts skipped.** Embedding empty or dead text would
+   pollute the index. Note the bdlaws repeal flag lives in
+   ``csv_metadata.is_repealed`` (the 203 flagged acts currently also carry
+   zero sections), so ``is_act_repealed`` checks both locations — the
+   top-level key alone never fires on real files.
 """
 
 from __future__ import annotations
@@ -35,6 +37,8 @@ from __future__ import annotations
 import re
 import uuid
 from dataclasses import dataclass, field
+
+CHUNKER_VERSION = "3"  # bump when chunk text/shape changes (forces re-ingest)
 
 MAX_CHARS = 2000  # sections longer than this are split
 TARGET_CHARS = 1500  # target size for split windows
@@ -74,6 +78,21 @@ class StatuteChunk:
     footnotes: list[str] = field(default_factory=list)
     source_url: str = ""
     source_file: str = ""
+    chunker_version: str = CHUNKER_VERSION
+
+
+def _truthy(value: object) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes"}
+    return bool(value)
+
+
+def is_act_repealed(act: dict) -> bool:
+    """Repeal flag: top level, or ``csv_metadata`` where bdlaws puts it."""
+    if _truthy(act.get("is_repealed")):
+        return True
+    meta = act.get("csv_metadata")
+    return isinstance(meta, dict) and _truthy(meta.get("is_repealed"))
 
 
 def stable_chunk_id(source_file: str, section_index: int, part_index: int) -> str:
@@ -85,6 +104,19 @@ def extract_section_label(content: str) -> str:
     """Pull the leading provision number ("5", "৩") used in citations."""
     m = _LEAD_NUM.match(content or "")
     return m.group(1) if m else ""
+
+
+def clean_act_title(title: str) -> str:
+    """Clean an act title: resolve ``1[...]`` markers, drop stray ``1The``.
+
+    Some bdlaws titles carry the amendment-marker artifact as a leading
+    ``1`` (``1The Penal Code, 1860``, ``1[বাংলাদেশ পেটেন্ট আইন, ২০২২``).
+    Legitimate leading years (``১৯৭৫ সালের …``) are Bengali digits and
+    are never touched.
+    """
+    cleaned = clean_markers(str(title or "")).strip()
+    cleaned = re.sub(r"^\d+\[", "", cleaned)  # unclosed marker in title
+    return re.sub(r"^1(?=[A-Za-z])", "", cleaned).strip()
 
 
 def clean_markers(content: str) -> str:
@@ -188,11 +220,11 @@ def split_long_text(text: str) -> list[str]:
 
 def chunk_act(act: dict, source_file: str) -> list[StatuteChunk]:
     """Chunk one parsed act JSON object into retrievable units."""
-    if act.get("is_repealed"):
+    if is_act_repealed(act):
         return []
     sections = act.get("sections") or []
     footnotes = act.get("footnotes") or []
-    act_title = str(act.get("act_title", "")).strip()
+    act_title = clean_act_title(str(act.get("act_title", "")))
     act_no = str(act.get("act_no", "")).strip()
     act_year = str(act.get("act_year", "")).strip()
     language = str(act.get("language", "") or "unknown")
@@ -215,7 +247,9 @@ def chunk_act(act: dict, source_file: str) -> list[StatuteChunk]:
         part_count = len(bodies)
         for part_idx, body in enumerate(bodies):
             text = header + "\n" + body
-            if notes:
+            # Notes only on part 0: repeating them on every split window
+            # inflates BM25/dense weight for amendment boilerplate.
+            if notes and part_idx == 0:
                 text += "\nAmendment notes: " + " | ".join(notes)
             chunks.append(
                 StatuteChunk(

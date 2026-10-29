@@ -32,3 +32,21 @@ def test_request_batches_preserve_order_and_content():
     texts = [f"text-{i}-" + "y" * 100 for i in range(25)]
     flat = [t for b in _encoder()._request_batches(texts) for t in b]
     assert flat == texts
+
+
+def test_pace_waits_when_tpm_window_would_overflow(monkeypatch):
+    import time as time_mod
+
+    import legalbuddy.embedder as emb
+
+    enc = _encoder()
+    enc.request_gap_s = 0.0
+    enc.tokens_per_min = 8000
+    enc._last_req = time_mod.monotonic()
+    enc._window_start = time_mod.monotonic()
+    enc._window_tokens = 7900
+    slept: list[float] = []
+    monkeypatch.setattr(emb.time, "sleep", slept.append)
+    enc._pace(200)  # 7900 + 200 > 8000 -> wait out the window
+    assert slept and slept[0] > 0
+    assert enc._window_tokens == 0

@@ -57,16 +57,16 @@ def _client() -> OpenAI:
 
 
 def retrieve(question: str, language: str | None = None,
-             act_year: str | None = None, limit: int = 8):
+             act_year: str | None = None, limit: int = 8,
+             section_label: str | None = None):
     """Hybrid retrieve statute chunks for a question."""
-    from legalbuddy.embedder import DENSE_MODEL
-
     dense = VoyageDense()
     dense_q = dense.embed([question], input_type="query")[0]
     sparse_q = encode_sparse([question])[0]
     return hybrid_search(
         make_client(), dense_q, sparse_q, limit=limit,
-        query_filter=build_filter(language=language, act_year=act_year))
+        query_filter=build_filter(language=language, act_year=act_year,
+                                  section_label=section_label))
 
 
 def _evidence_block(hits) -> tuple[str, list[Citation]]:

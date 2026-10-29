@@ -144,4 +144,44 @@ def test_split_long_text_tiny_tail_merged():
     assert len(split_long_text("A. " + "x " * 800 + "tail.")) >= 1
 
 
+def test_act_title_marker_artifacts_cleaned():
+    act = _act(act_title="1The Penal Code, 1860",
+               sections=[{"section_content": "302. Whoever commits murder shall be punished."}])
+    (c,) = chunk_act(act, "x.json")
+    assert c.act_title == "The Penal Code, 1860"
+    assert c.text.startswith("The Penal Code, 1860 (XLV of 1860)")
+
+    act2 = _act(act_title="1[বাংলাদেশ পেটেন্ট আইন, ২০২২",
+                sections=[{"section_content": "১। এই আইন।"}])
+    (c2,) = chunk_act(act2, "y.json")
+    assert c2.act_title.startswith("বাংলাদেশ পেটেন্ট আইন")
+
+    act3 = _act(act_title="১৯৭৫ সালের বিশেষ আইন",
+                sections=[{"section_content": "১। এই আইন।"}])
+    (c3,) = chunk_act(act3, "z.json")
+    assert c3.act_title == "১৯৭৫ সালের বিশেষ আইন"  # legitimate year kept
+
+
+def test_repealed_via_csv_metadata_skipped():
+    # Real bdlaws files carry the flag in csv_metadata, not top level.
+    act = _act(csv_metadata={"is_repealed": True},
+               sections=[{"section_content": "1. Text."}])
+    del act["is_repealed"]
+    assert chunk_act(act, "x.json") == []
+
+
+def test_amendment_notes_only_on_first_part():
+    parts = " ".join(
+        f"({i}) Subsection {i} states a distinct rule of law for this purpose."
+        for i in range(1, 60))
+    act = _act(
+        sections=[{"section_content": "10. " + parts + " See1[note]."}],
+        footnotes=[{"footnote_text": "Inserted in 1973."}],
+    )
+    chunks = chunk_act(act, "x.json")
+    assert len(chunks) > 1
+    assert "Amendment notes: Inserted in 1973." in chunks[0].text
+    assert all("Amendment notes" not in c.text for c in chunks[1:])
+
+
 
