@@ -85,7 +85,8 @@ def health() -> HealthResponse:
     except Exception as exc:  # Qdrant down / auth / network
         log.warning("health check degraded: %r", exc)
         return HealthResponse(
-            status="degraded", collection=COLLECTION, points=None, detail=str(exc)[:300])
+            status="degraded", collection=COLLECTION, points=None,
+            detail="Index check failed.")
 
 
 @app.post("/api/chat", response_model=ChatResponse)
@@ -94,10 +95,13 @@ def post_chat(req: ChatRequest) -> ChatResponse:
     try:
         ans = chat_mod.answer(req.question, language=req.language,
                               act_year=req.act_year, limit=req.limit)
-    except Exception as exc:  # retrieval or generation failure -> 502, not 500
+    except Exception:  # retrieval or generation failure -> 502, not 500
+        # Never leak internals (tracebacks, hostnames, SDK errors) to callers;
+        # the full traceback stays in the server log.
         log.exception("chat request failed")
-        raise HTTPException(status_code=502,
-                            detail=f"answer generation failed: {exc}") from exc
+        raise HTTPException(
+            status_code=502,
+            detail="Answer generation failed. Please try again.") from None
     return ChatResponse(
         answer=ans.text,
         citations=[CitationOut(

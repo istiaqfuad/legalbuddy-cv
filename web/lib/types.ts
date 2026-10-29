@@ -15,5 +15,3 @@ export interface ChatMessage {
   text: string;
   citations?: Citation[];
 }
-
-export type Language = "auto" | "english" | "bengali";

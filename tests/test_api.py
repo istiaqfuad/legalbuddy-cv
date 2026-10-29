@@ -40,10 +40,12 @@ def test_chat_validation(monkeypatch):
 
 def test_chat_upstream_failure_is_502(monkeypatch):
     def boom(*a, **k):
-        raise RuntimeError("baseten down")
+        raise RuntimeError("baseten down at secret-host.internal:443")
     monkeypatch.setattr(chat_mod, "answer", boom)
     resp = TestClient(api_mod.app).post("/api/chat", json={"question": "hi"})
     assert resp.status_code == 502
+    # Generic message only: no exception text, hostnames, or ports leak out.
+    assert resp.json()["detail"] == "Answer generation failed. Please try again."
 
 
 def test_health_ok(monkeypatch):
@@ -65,3 +67,4 @@ def test_health_degraded(monkeypatch):
     resp = TestClient(api_mod.app).get("/health")
     assert resp.status_code == 200
     assert resp.json()["status"] == "degraded"
+    assert resp.json()["detail"] == "Index check failed."

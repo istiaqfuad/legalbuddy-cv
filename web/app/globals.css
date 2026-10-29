@@ -2,9 +2,61 @@
 
 @theme {
   --font-display: Georgia, "Times New Roman", "Noto Serif Bengali", serif;
+  --color-gold: #c9a227;
+  --color-gold-light: #e3c565;
+  --color-ink: #0c0a09;
 }
 
 body {
-  background: #ffffff;
-  color: #1c1917;
+  background: #0c0a09;
+  color: #e7e5e4;
+}
+
+::selection {
+  background: #c9a227;
+  color: #0c0a09;
+}
+
+/* Single hero entrance — used once per page, never on scroll. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Gentle float for the hero example card. */
+@keyframes drift {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+/* Chat "thinking" dots. */
+@keyframes blink-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }

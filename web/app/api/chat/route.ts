@@ -4,38 +4,47 @@
  * browser. `API_INTERNAL_URL` points at it inside compose
  * (`http://api:8000`) and defaults to localhost for `npm run dev`.
  * Reasoning models are slow: allow up to 3 minutes upstream.
+ *
+ * Error contract: the browser only ever sees GENERIC_ERROR. Upstream
+ * status codes, exception text, and tracebacks stay in server logs.
  */
 
 const UPSTREAM_TIMEOUT_MS = 180_000;
+const GENERIC_ERROR = "The assistant is unavailable right now. Please try again in a moment.";
 
 export async function POST(req: Request) {
-  let body: { question?: unknown; language?: unknown };
+  let body: { question?: unknown };
   try {
     body = await req.json();
   } catch {
-    return Response.json({ detail: "request body must be JSON" }, { status: 400 });
+    return Response.json({ detail: "Request body must be JSON." }, { status: 400 });
   }
   if (typeof body.question !== "string" || body.question.trim().length === 0) {
-    return Response.json({ detail: "question must be a non-empty string" }, { status: 400 });
+    return Response.json({ detail: "Question must be a non-empty string." }, { status: 400 });
   }
-  const language =
-    body.language === "english" || body.language === "bengali" ? body.language : null;
 
   const base = process.env.API_INTERNAL_URL ?? "http://localhost:8000";
   try {
     const upstream = await fetch(`${base}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question: body.question, language, limit: 6 }),
+      // No language filter: the API matches English, Bangla, and mixed
+      // queries automatically and answers in the question's language.
+      body: JSON.stringify({ question: body.question, language: null, limit: 6 }),
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
+    if (!upstream.ok) {
+      console.error(`chat upstream HTTP ${upstream.status}`);
+      return Response.json({ detail: GENERIC_ERROR }, { status: 502 });
+    }
     const data = await upstream.json();
-    return Response.json(data, { status: upstream.status });
+    if (typeof data.answer !== "string") {
+      console.error("chat upstream returned an unexpected shape");
+      return Response.json({ detail: GENERIC_ERROR }, { status: 502 });
+    }
+    return Response.json(data);
   } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    return Response.json(
-      { detail: `answer service unreachable: ${reason}` },
-      { status: 502 },
-    );
+    console.error(`chat upstream unreachable: ${err instanceof Error ? err.message : err}`);
+    return Response.json({ detail: GENERIC_ERROR }, { status: 502 });
   }
 }

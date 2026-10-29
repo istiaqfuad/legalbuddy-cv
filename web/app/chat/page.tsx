@@ -1,0 +1,49 @@
+import Chat from "@/components/chat";
+import SiteHeader from "@/components/site-header";
+
+// Live index status must never be prerendered at build time.
+export const dynamic = "force-dynamic";
+
+async function getIndexStatus(): Promise<{ points: number | null; live: boolean }> {
+  const base = process.env.API_INTERNAL_URL ?? "http://localhost:8000";
+  try {
+    const res = await fetch(`${base}/health`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return { points: null, live: false };
+    const data = await res.json();
+    return {
+      points: typeof data.points === "number" ? data.points : null,
+      live: data.status === "ok",
+    };
+  } catch {
+    return { points: null, live: false };
+  }
+}
+
+export default async function ChatPage() {
+  const { points, live } = await getIndexStatus();
+
+  return (
+    <div className="flex min-h-screen flex-col bg-ink">
+      <SiteHeader />
+      <div className="border-b border-stone-800/80">
+        <div className="mx-auto flex max-w-3xl items-center gap-2 px-4 py-2 text-xs text-stone-500 sm:px-6">
+          <span
+            className={`inline-block size-1.5 rounded-full ${
+              live ? "bg-emerald-400 motion-safe:animate-pulse" : "bg-stone-500"
+            }`}
+          />
+          {live && points !== null
+            ? `${points.toLocaleString()} sections indexed`
+            : "index offline — answers may be limited"}
+        </div>
+      </div>
+
+      <main className="mx-auto flex w-full max-w-3xl min-h-0 flex-1 flex-col">
+        <Chat />
+      </main>
+    </div>
+  );
+}
