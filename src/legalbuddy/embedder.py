@@ -19,12 +19,23 @@ import voyageai
 from fastembed import SparseTextEmbedding
 from voyageai.error import RateLimitError
 
+
+def estimate_tokens(text: str) -> int:
+    """Script-aware token estimate calibrated on billed usage.
+
+    Voyage bills Bengali near ~1 token/char but Latin legal text near
+    ~1 token/4 chars. The old chars//2 rule underestimated dense Bengali
+    2x, producing requests that blew the 10K TPM window on every retry.
+    """
+    bn = sum(1 for ch in text if "\u0980" <= ch <= "\u09ff")
+    return bn + (len(text) - bn + 3) // 4
+
 DENSE_MODEL = os.environ.get("EMBEDDING_MODEL", "voyage-4")
 SPARSE_MODEL = "Qdrant/bm25"
-# Max estimated tokens per API request: stay well under the 10K TPM window.
-# Bengali bills near ~1 token/char, so the chars//2 estimate has less headroom
-# there; keep requests small and let pacing handle throughput.
-MAX_TOKENS_PER_REQUEST = 3500
+# Max estimated tokens per API request: with the script-aware estimator this
+# is close to billed tokens, so 3000 keeps 2-3 paced requests inside the
+# 10K TPM rolling window instead of 429-looping forever.
+MAX_TOKENS_PER_REQUEST = 3000
 
 _sparse_singleton: SparseTextEmbedding | None = None
 
@@ -75,7 +86,7 @@ class VoyageDense:
         """Split into request batches capped by count AND estimated tokens."""
         batches, cur, cur_est = [], [], 0
         for t in texts:
-            est = max(len(t) // 2, 1)
+            est = max(estimate_tokens(t), 1)
             if cur and (len(cur) >= self.batch_size or cur_est + est > MAX_TOKENS_PER_REQUEST):
                 batches.append(cur)
                 cur, cur_est = [], 0

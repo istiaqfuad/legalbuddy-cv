@@ -10,10 +10,18 @@ def _encoder() -> VoyageDense:
 
 
 def test_request_batches_capped_by_tokens():
-    texts = ["x" * 2000] * 10  # ~1000 est tokens each
+    texts = ["x" * 2000] * 10  # ~500 est tokens each (latin ~1/4)
     batches = _encoder()._request_batches(texts)
     assert sum(len(b) for b in batches) == 10
-    assert all(len(b) <= 4 for b in batches)  # 4500 cap -> ~4 per request
+    assert all(sum(len(t) for t in b) // 4 <= 3000 for b in batches)
+
+
+def test_estimate_tokens_script_aware():
+    from legalbuddy.embedder import estimate_tokens
+    assert estimate_tokens("abcd" * 100) == 100  # latin ~1/4
+    bn = "অ" * 100
+    assert estimate_tokens(bn) == 100  # bengali ~1/1
+    assert estimate_tokens(bn) > estimate_tokens("a" * 100)
 
 
 def test_request_batches_capped_by_count():

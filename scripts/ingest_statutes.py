@@ -34,7 +34,7 @@ from tqdm import tqdm  # noqa: E402
 from voyageai.error import RateLimitError  # noqa: E402
 
 from legalbuddy.chunking import chunk_act  # noqa: E402
-from legalbuddy.embedder import VoyageDense, encode_sparse  # noqa: E402
+from legalbuddy.embedder import VoyageDense, encode_sparse, estimate_tokens  # noqa: E402
 from legalbuddy.store import make_client, upsert_chunks  # noqa: E402
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "acts")
@@ -119,7 +119,7 @@ def main() -> None:
     pace = PaceController()
 
     def est_tokens(texts: list[str]) -> int:
-        return sum(len(t) for t in texts) // 2  # conservative for Bangla
+        return sum(estimate_tokens(t) for t in texts)
 
     def process_cycle(batch: list[tuple[str, list]]) -> None:
         """Embed + upsert one accumulated cross-act batch, checkpoint all acts."""
