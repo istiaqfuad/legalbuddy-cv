@@ -3,6 +3,7 @@ import AuthButton from "./auth-button";
 import Logo from "./logo";
 import OpenAppLink from "./open-app-link";
 import ThemeToggle from "./theme-toggle";
+import Wordmark from "./wordmark";
 
 const NAV = [
   { href: "/#how", label: "How it works" },
@@ -17,7 +18,7 @@ export default function SiteHeader() {
       <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-3 sm:px-6">
         <Link href="/" className="flex items-center gap-2.5">
           <Logo size={32} />
-          <span className="font-display text-lg text-stone-100">LegalBuddy</span>
+          <Wordmark className="text-xl" />
         </Link>
         <nav className="ml-auto hidden items-center gap-6 text-sm text-stone-400 md:flex">
           {NAV.map((n) => (
