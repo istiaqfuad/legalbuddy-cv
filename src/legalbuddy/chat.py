@@ -19,6 +19,8 @@ log = logging.getLogger(__name__)
 from openai import OpenAI
 
 from legalbuddy.embedder import VoyageDense, encode_sparse
+from legalbuddy.rerank import CANDIDATES as RERANK_CANDIDATES
+from legalbuddy.rerank import rerank_points
 from legalbuddy.memory import (
     contextualize,
     history_block,
@@ -102,15 +104,23 @@ def retrieve(question: str, language: str | None = None,
     sparse_q = encode_sparse([q])[0]
     query_filter = build_filter(language=language, act_year=act_year,
                                 section_label=section_label)
+    # Fetch extra fusion candidates; the cross-encoder keeps the best
+    # `limit`. Fetch size stays within the prefetch windows (40 statutes,
+    # 20 user-doc chunks per leg), so no Qdrant shape changes are needed.
+    fetch_n = max(limit, RERANK_CANDIDATES)
     mode = os.environ.get("FUSION", "weighted").lower()
     if mode == "dbsf":
-        return dbsf_search(make_client(), dense_q, sparse_q, limit=limit,
+        hits = dbsf_search(make_client(), dense_q, sparse_q, limit=fetch_n,
                            query_filter=query_filter)
-    if mode == "weighted":
-        return weighted_search(make_client(), q, dense_q, sparse_q,
-                               limit=limit, query_filter=query_filter)
-    return hybrid_search(
-        make_client(), dense_q, sparse_q, limit=limit, query_filter=query_filter)
+    elif mode == "weighted":
+        hits = weighted_search(make_client(), q, dense_q, sparse_q,
+                               limit=fetch_n, query_filter=query_filter)
+    else:
+        hits = hybrid_search(
+            make_client(), dense_q, sparse_q, limit=fetch_n,
+            query_filter=query_filter)
+    hits.points = rerank_points(q, hits.points, limit)
+    return hits
 
 
 # Summary-style questions ("explain this case") need the whole file, not
@@ -176,12 +186,19 @@ def retrieve_grounded(question: str, language: str | None = None,
 
 
 def retrieve_docs(question: str, user_id: str, doc_ids: list[str], limit: int = 4):
-    """Hybrid retrieve over the user's attached documents (filtered, isolated)."""
+    """Hybrid retrieve over the user's attached documents (filtered, isolated).
+
+    Over-fetches and cross-encoder reranks to ``limit`` (same pattern as
+    statutes); isolation is unchanged because reranking only reorders the
+    already-filtered points.
+    """
     dense = VoyageDense()
     dense_q = dense.embed([question], input_type="query")[0]
     sparse_q = encode_sparse([question])[0]
-    return search_user_docs(make_client(), dense_q, sparse_q, user_id, doc_ids,
-                            limit=limit)
+    hits = search_user_docs(make_client(), dense_q, sparse_q, user_id, doc_ids,
+                            limit=max(limit, RERANK_CANDIDATES))
+    hits.points = rerank_points(question, hits.points, limit)
+    return hits
 
 
 def _doc_evidence_block(hits, start: int) -> tuple[str, list[Citation]]:
