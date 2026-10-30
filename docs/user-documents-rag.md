@@ -68,10 +68,30 @@ deterministic (`uuid5(doc_id#index)`), so re-uploads are idempotent.
 
 ## Retrieval + generation
 
-`chat.stream_answer(..., user_id, doc_ids)` runs the normal statute
-hybrid retrieval, then — only when both are present — a second
-hybrid search over `user-documents` filtered to that user and those
-docs (`RRF`, limit 4). Evidence blocks are labeled separately and the
+`chat.stream_answer(..., user_id, doc_ids)` retrieves in two stages
+(`chat.retrieve_grounded`). Vague questions ("explain this case") carry
+no searchable terms, so statute retrieval keyed on the question alone
+returns generic sections while the file's facts sit unused:
+
+1. **User file first.** Hybrid search over `user-documents`, filtered to
+   `user_id` + `doc_ids` as before.
+2. **Statutes keyed on question + file facts.** The top doc excerpts
+   (truncated to 3000 chars) are appended to the question
+   (`build_statute_query`) and the *expanded* text is what gets embedded
+   for the statute search — plain concatenation, no extra LLM call. This
+   is the standard iterative-retrieval pattern: the file's offences,
+   parties, and mentioned sections become the search terms, so the Penal
+   Code / Evidence Act sections matching the case come back.
+3. **Summary intent.** `is_summary_request` detects explain-the-whole-file
+   questions and raises doc recall to 12 chunks (evidence capped at
+   12000 chars), since top-k ranking is meaningless for "explain
+   everything." Statute refs stay `[1..n]`, doc refs `[D1..m]`.
+
+If the file yields nothing (or doc retrieval fails), the statute search
+falls back to the raw question, so the answer degrades to the old
+behavior instead of failing. Verified live: "explain this case" plus
+murder-trial facts returns Penal Code ss. 302/303/307; the bare question
+alone does not. Evidence blocks are labeled separately and the
 system prompt is extended: documents describe the user's *situation*,
 statutes describe the *law*; cite files as `[D1]`, law as `[n]`, and say
 which source says what when they conflict. Document retrieval failure

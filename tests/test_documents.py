@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from legalbuddy import chat as chat_mod
 from legalbuddy import documents as docs_mod
 from legalbuddy.chat import _doc_evidence_block
 from legalbuddy.store import (
@@ -190,6 +191,85 @@ def test_search_filters_user_and_docs_inside_query():
         assert f is not None
         keys = [getattr(c, "key", None) for c in f.must]
         assert "user_id" in keys  # never a post-filter
+
+
+def test_is_summary_request():
+    assert chat_mod.is_summary_request("Explain this case")
+    assert chat_mod.is_summary_request("summarize my agreement please")
+    assert chat_mod.is_summary_request("Describe the FIR")
+    assert not chat_mod.is_summary_request("What is the punishment for murder?")
+    assert not chat_mod.is_summary_request("explain the law on bail")
+
+
+def test_build_statute_query_expands_and_truncates():
+    q = "explain this case"
+    expanded = chat_mod.build_statute_query(q, ["murder facts here"])
+    assert expanded.startswith(q) and "murder facts here" in expanded
+    assert chat_mod.build_statute_query(q, []) == q
+    assert chat_mod.build_statute_query(q, [""]) == q
+    long_facts = ["x" * 5000]
+    assert len(chat_mod.build_statute_query(q, long_facts)) <= len(q) + 100 + chat_mod.STATUTE_QUERY_CHARS
+
+
+def _statute_hit(act="The Penal Code, 1860"):
+    return SimpleNamespace(id="s1", score=0.9, payload={"act_title": act})
+
+
+def test_retrieve_grounded_two_stage(monkeypatch):
+    calls = {}
+
+    def fake_docs(question, user_id, doc_ids, limit=4):
+        calls["docs"] = (question, user_id, tuple(doc_ids), limit)
+        return SimpleNamespace(points=[
+            SimpleNamespace(id="d1", score=0.9,
+                            payload={"text": "murder trial facts", "filename": "f.txt"})])
+
+    def fake_retrieve(question, language=None, act_year=None, limit=8,
+                      section_label=None, search_text=None):
+        calls["statute"] = search_text
+        return SimpleNamespace(points=[_statute_hit()])
+
+    monkeypatch.setattr(chat_mod, "retrieve_docs", fake_docs)
+    monkeypatch.setattr(chat_mod, "retrieve", fake_retrieve)
+    hits, doc_hits, query = chat_mod.retrieve_grounded(
+        "explain this case", user_id="u1", doc_ids=["d1"])
+    assert calls["docs"][:3] == ("explain this case", "u1", ("d1",))
+    assert calls["docs"][3] == chat_mod.SUMMARY_DOC_LIMIT  # summary pulls the file
+    assert "murder trial facts" in calls["statute"]
+    assert query == calls["statute"]
+    assert [p.id for p in hits.points] == ["s1"]
+    assert doc_hits is not None
+
+
+def test_retrieve_grounded_no_docs_uses_question(monkeypatch):
+    seen = {}
+
+    def fake_retrieve(question, language=None, act_year=None, limit=8,
+                      section_label=None, search_text=None):
+        seen["search_text"] = search_text
+        return SimpleNamespace(points=[])
+
+    monkeypatch.setattr(chat_mod, "retrieve", fake_retrieve)
+    hits, doc_hits, query = chat_mod.retrieve_grounded("bail rules?")
+    assert query == "bail rules?"
+    assert seen["search_text"] == "bail rules?"
+    assert doc_hits is None
+
+
+def test_retrieve_grounded_doc_failure_still_answers(monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("qdrant down")
+
+    def fake_retrieve(question, language=None, act_year=None, limit=8,
+                      section_label=None, search_text=None):
+        return SimpleNamespace(points=[_statute_hit()])
+
+    monkeypatch.setattr(chat_mod, "retrieve_docs", boom)
+    monkeypatch.setattr(chat_mod, "retrieve", fake_retrieve)
+    hits, doc_hits, query = chat_mod.retrieve_grounded(
+        "explain this case", user_id="u1", doc_ids=["d1"])
+    assert query == "explain this case"  # falls back to the raw question
+    assert doc_hits is None and [p.id for p in hits.points] == ["s1"]
 
 
 def test_doc_evidence_numbering():
