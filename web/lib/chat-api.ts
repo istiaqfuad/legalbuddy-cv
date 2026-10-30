@@ -39,6 +39,8 @@ export interface StreamOptions {
   idleMs?: number;
   /** Abort the in-flight request, e.g. when the user hits Stop. */
   signal?: AbortSignal;
+  /** User-document ids attached to this question (isolated server-side). */
+  docIds?: string[];
 }
 
 const DEFAULT_GRACE_MS = 150_000;
@@ -67,7 +69,7 @@ export async function* streamChat(
     res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question }),
+      body: JSON.stringify({ question, docIds: opts.docIds ?? [] }),
       signal: opts.signal,
     });
   } catch {

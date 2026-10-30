@@ -8,7 +8,12 @@
 
 import { create } from "zustand";
 import { streamChat } from "@/lib/chat-api";
-import type { ChatMessage, Citation, Conversation } from "@/lib/types";
+import type { ChatMessage, Citation, Conversation, UserDocument } from "@/lib/types";
+
+/** Sidebar card key: `s1` for statute [1], `d1` for document [D1]. */
+export function citationKey(c: Citation): string {
+  return `${c.kind === "document" ? "d" : "s"}${c.ref}`;
+}
 
 async function saveMessage(
   conversationId: string,
@@ -30,12 +35,12 @@ interface ChatState {
   messages: ChatMessage[];
   pending: boolean;
   failed: boolean;
-  flash: number | null;
+  flash: string | null;
   /** Sidebar source list. `citations` belongs to the message that opened it. */
   sidebarOpen: boolean;
   sidebarPinned: boolean;
   sidebarCitations: Citation[];
-  expandedRef: number | null;
+  expandedRef: string | null;
   /** Left history rail. */
   historyOpen: boolean;
   /** Persisted history. Null activeId means the chat is new and unsaved. */
@@ -47,10 +52,20 @@ interface ChatState {
   regenerate: () => Promise<void>;
   dismissError: () => void;
   /** Open the sidebar on `citations`, expanding only `ref` (null = all shut). */
-  openSources: (citations: Citation[], ref: number | null) => void;
+  openSources: (citations: Citation[], ref: string | null) => void;
   closeSidebar: () => void;
   togglePin: () => void;
-  toggleSource: (ref: number) => void;
+  toggleSource: (ref: string) => void;
+  /** Documents attached to the active chat (scoped retrieval per question). */
+  attachedIds: string[];
+  documents: UserDocument[];
+  uploading: boolean;
+  uploadError: string | null;
+  refreshDocuments: () => Promise<void>;
+  uploadDocument: (file: File) => Promise<void>;
+  attachDocument: (docId: string) => Promise<void>;
+  detachDocument: (docId: string) => Promise<void>;
+  removeDocument: (docId: string) => Promise<void>;
   toggleHistory: () => void;
   setHistoryOpen: (open: boolean) => void;
   refreshConversations: () => Promise<void>;
@@ -76,6 +91,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
   /** Stream one answer into `messages[assistantId]` and persist it. */
   async function runAssistant(question: string, assistantId: number): Promise<void> {
     const conversationId = get().activeId;
+    const docIds = get().attachedIds;
     // Local accumulator: state reads would go stale when several token
     // events land in one read chunk.
     let acc = "";
@@ -84,7 +100,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
     const ctrl = new AbortController();
     streamAbort = ctrl;
     try {
-      for await (const ev of streamChat(question, { signal: ctrl.signal })) {
+      for await (const ev of streamChat(question, { signal: ctrl.signal, docIds })) {
         if (ev.type === "token") {
           acc += ev.text;
           const text = acc;
@@ -165,6 +181,91 @@ export const useChatStore = create<ChatState>()((set, get) => {
     activeId: null,
     conversations: [],
     historyLoading: false,
+    attachedIds: [],
+    documents: [],
+    uploading: false,
+    uploadError: null,
+
+    refreshDocuments: async () => {
+      try {
+        const res = await fetch("/api/documents");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (Array.isArray(data?.documents)) set({ documents: data.documents });
+      } catch (err) {
+        console.error("documents list failed", err);
+      }
+    },
+
+    uploadDocument: async (file) => {
+      if (get().uploading) return;
+      set({ uploading: true, uploadError: null });
+      try {
+        const form = new FormData();
+        form.append("file", file, file.name);
+        const res = await fetch("/api/documents", { method: "POST", body: form });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.document?.doc_id) {
+          set({
+            uploadError:
+              typeof data?.detail === "string" && data.detail
+                ? data.detail
+                : "Could not process the file. Please try again.",
+          });
+          return;
+        }
+        const doc = data.document as UserDocument;
+        set((s) => ({ documents: [doc, ...s.documents] }));
+        await get().attachDocument(doc.doc_id);
+      } catch (err) {
+        console.error("document upload failed", err);
+        set({ uploadError: "Could not process the file. Please try again." });
+      } finally {
+        set({ uploading: false });
+      }
+    },
+
+    attachDocument: async (docId) => {
+      if (get().attachedIds.includes(docId)) return;
+      set((s) => ({ attachedIds: [...s.attachedIds, docId] }));
+      const activeId = get().activeId;
+      if (!activeId) return;
+      try {
+        await fetch(`/api/conversations/${activeId}/documents`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ document_id: docId }),
+        });
+      } catch (err) {
+        console.error("document attach failed", err);
+      }
+    },
+
+    detachDocument: async (docId) => {
+      set((s) => ({ attachedIds: s.attachedIds.filter((d) => d !== docId) }));
+      const activeId = get().activeId;
+      if (!activeId) return;
+      try {
+        await fetch(
+          `/api/conversations/${activeId}/documents?document_id=${encodeURIComponent(docId)}`,
+          { method: "DELETE" },
+        );
+      } catch (err) {
+        console.error("document detach failed", err);
+      }
+    },
+
+    removeDocument: async (docId) => {
+      set((s) => ({
+        documents: s.documents.filter((d) => d.doc_id !== docId),
+        attachedIds: s.attachedIds.filter((d) => d !== docId),
+      }));
+      try {
+        await fetch(`/api/documents/${encodeURIComponent(docId)}`, { method: "DELETE" });
+      } catch (err) {
+        console.error("document remove failed", err);
+      }
+    },
 
     refreshConversations: async () => {
       try {
@@ -185,6 +286,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
         sidebarOpen: false,
         sidebarCitations: [],
         expandedRef: null,
+        attachedIds: [],
       }),
 
     openConversation: async (id) => {
@@ -202,6 +304,21 @@ export const useChatStore = create<ChatState>()((set, get) => {
           }),
         );
         set({ messages, activeId: id, expandedRef: null, sidebarCitations: [] });
+        try {
+          const linkRes = await fetch(`/api/conversations/${id}/documents`);
+          if (linkRes.ok) {
+            const linkData = await linkRes.json();
+            const ids = Array.isArray(linkData?.documents)
+              ? linkData.documents.map((d: { doc_id: string }) => d.doc_id)
+              : [];
+            set({ attachedIds: ids });
+          } else {
+            set({ attachedIds: [] });
+          }
+        } catch (err) {
+          console.error("attached documents load failed", err);
+          set({ attachedIds: [] });
+        }
       } catch (err) {
         console.error("conversation open failed", err);
         set({ failed: true });
@@ -231,7 +348,13 @@ export const useChatStore = create<ChatState>()((set, get) => {
       set((s) => ({
         conversations: s.conversations.filter((c) => c.id !== id),
         ...(s.activeId === id
-          ? { activeId: null, messages: [], sidebarOpen: false, sidebarCitations: [] }
+          ? {
+              activeId: null,
+              messages: [],
+              sidebarOpen: false,
+              sidebarCitations: [],
+              attachedIds: [],
+            }
           : {}),
       }));
       try {
@@ -277,10 +400,23 @@ export const useChatStore = create<ChatState>()((set, get) => {
           });
           if (res.ok) {
             const data = await res.json();
+            const newId = data.conversation.id as string;
             set((s) => ({
-              activeId: data.conversation.id as string,
+              activeId: newId,
               conversations: [data.conversation, ...s.conversations],
             }));
+            // Attachments made before the conversation existed link now.
+            for (const docId of get().attachedIds) {
+              try {
+                await fetch(`/api/conversations/${newId}/documents`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ document_id: docId }),
+                });
+              } catch (err) {
+                console.error("document attach failed", err);
+              }
+            }
           }
         } catch (err) {
           console.error("conversation create failed", err);

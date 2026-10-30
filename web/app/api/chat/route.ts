@@ -1,3 +1,6 @@
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+
 /** Server-side proxy: browser -> Next route -> Python API.
  *
  * The Python API (Voyage + Qdrant + Baseten keys) is never exposed to the
@@ -14,7 +17,7 @@ const UPSTREAM_TIMEOUT_MS = 180_000;
 const GENERIC_ERROR = "The assistant is unavailable right now. Please try again in a moment.";
 
 export async function POST(req: Request) {
-  let body: { question?: unknown };
+  let body: { question?: unknown; docIds?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -23,6 +26,13 @@ export async function POST(req: Request) {
   if (typeof body.question !== "string" || body.question.trim().length === 0) {
     return Response.json({ detail: "Question must be a non-empty string." }, { status: 400 });
   }
+  const docIds = Array.isArray(body.docIds)
+    ? body.docIds.filter((d): d is string => typeof d === "string" && d.length > 0).slice(0, 10)
+    : [];
+  // The session user scopes document retrieval server-side; the browser
+  // never supplies a user id of its own.
+  const session = await getServerSession(authOptions);
+  const userId = session?.user?.id ?? null;
 
   const base = process.env.API_INTERNAL_URL ?? "http://localhost:8000";
   try {
@@ -31,7 +41,13 @@ export async function POST(req: Request) {
       headers: { "Content-Type": "application/json" },
       // No language filter: the API matches every query automatically and
       // answers in the question's language.
-      body: JSON.stringify({ question: body.question, language: null, limit: 6 }),
+      body: JSON.stringify({
+        question: body.question,
+        language: null,
+        limit: 6,
+        user_id: userId,
+        doc_ids: docIds,
+      }),
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
     if (!upstream.ok || !upstream.body) {

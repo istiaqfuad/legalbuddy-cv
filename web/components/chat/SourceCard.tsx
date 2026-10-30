@@ -4,24 +4,33 @@ import type { Citation } from "@/lib/types";
 
 /** One source in the rail. Collapsed to a single line by default so the
  * answer keeps the reader's attention; expands on tap, or when its [n]
- * marker in the prose is clicked.
+ * (or [Dn] for user files) marker in the prose is clicked.
  */
 export default function SourceCard({
   citation,
+  cardKey,
   open,
   flash,
   onToggle,
 }: {
   citation: Citation;
+  cardKey: string;
   open: boolean;
   flash: boolean;
   onToggle: () => void;
 }) {
-  const heading =
-    citation.section_label && citation.section_label !== "?" ? `Section ${citation.section_label}` : "Provision";
+  const isDoc = citation.kind === "document";
+  const heading = isDoc
+    ? citation.doc_filename || "Your file"
+    : citation.section_label && citation.section_label !== "?"
+      ? `Section ${citation.section_label}`
+      : "Provision";
+  const sub = isDoc
+    ? (citation.doc_page ? `Page ${citation.doc_page} · your file` : "Your file")
+    : `${citation.act_title} (${citation.act_no} of ${citation.act_year})`;
   return (
     <article
-      id={`cite-card-${citation.ref}`}
+      id={`cite-card-${cardKey}`}
       className={`scroll-mt-24 rounded-lg border bg-stone-900/60 transition-colors ${
         flash ? "border-gold/70" : "border-stone-800"
       }`}
@@ -33,11 +42,9 @@ export default function SourceCard({
       >
         <span className="min-w-0">
           <span className="block truncate text-[13px] font-semibold text-stone-100">
-            [{citation.ref}] {heading}
+            [{isDoc ? `D${citation.ref}` : citation.ref}] {heading}
           </span>
-          <span className="block truncate text-[11px] text-stone-500">
-            {citation.act_title} ({citation.act_no} of {citation.act_year})
-          </span>
+          <span className="block truncate text-[11px] text-stone-500">{sub}</span>
         </span>
         <span
           aria-hidden

@@ -1,6 +1,6 @@
 "use client";
 
-import { useChatStore } from "@/stores/chat-store";
+import { citationKey, useChatStore } from "@/stores/chat-store";
 import SourceCard from "./SourceCard";
 
 /** Cited-sections sidebar. Closed by default; opens on demand with every
@@ -22,17 +22,42 @@ export default function SourcesSidebar() {
 
   if (!open) return null;
 
+  const statutes = citations.filter((c) => c.kind !== "document");
+  const docs = citations.filter((c) => c.kind === "document");
+
   const cards = (
     <div className="space-y-2">
-      {citations.map((c) => (
-        <SourceCard
-          key={c.ref}
-          citation={c}
-          open={expandedRef === c.ref}
-          flash={flash === c.ref}
-          onToggle={() => toggleSource(c.ref)}
-        />
-      ))}
+      {statutes.map((c) => {
+        const key = citationKey(c);
+        return (
+          <SourceCard
+            key={key}
+            cardKey={key}
+            citation={c}
+            open={expandedRef === key}
+            flash={flash === key}
+            onToggle={() => toggleSource(key)}
+          />
+        );
+      })}
+      {docs.length > 0 ? (
+        <p className="pt-2 text-xs font-semibold tracking-wider text-stone-500 uppercase">
+          From your files · {docs.length}
+        </p>
+      ) : null}
+      {docs.map((c) => {
+        const key = citationKey(c);
+        return (
+          <SourceCard
+            key={key}
+            cardKey={key}
+            citation={c}
+            open={expandedRef === key}
+            flash={flash === key}
+            onToggle={() => toggleSource(key)}
+          />
+        );
+      })}
     </div>
   );
 

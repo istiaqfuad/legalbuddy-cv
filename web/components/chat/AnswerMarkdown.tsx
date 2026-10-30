@@ -3,22 +3,22 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-/** remark plugin: turns [1], [2] markers in plain text into `#cite-N`
- * links (outside existing links/code), so the renderer below can make
- * them jump buttons. Model output is prose, so markers only appear
- * where the model cited evidence.
+/** remark plugin: turns [1], [2], [D1], [D2] markers in plain text
+ * into jump links (outside existing links/code), so the renderer below
+ * can make them sidebar buttons. Model output is prose, so markers only
+ * appear where the model cited evidence.
  */
 function remarkCiteRefs() {
   const splitText = (value: string) => {
-    const parts = value.split(/(\[\d+\])/g);
+    const parts = value.split(/(\[D?\d+\])/g);
     if (parts.length < 2) return null;
     return parts.map((p) => {
-      const m = p.match(/^\[(\d+)\]$/);
+      const m = p.match(/^\[(D?)(\d+)\]$/);
       return m
         ? {
             type: "link",
-            url: `#cite-${m[1]}`,
-            title: "Jump to cited section",
+            url: `#cite-${m[1] ? "d" : "s"}${m[2]}`,
+            title: m[1] ? "Jump to cited file excerpt" : "Jump to cited section",
             children: [{ type: "text", value: p }],
           }
         : { type: "text", value: p };
@@ -51,7 +51,8 @@ export default function AnswerMarkdown({
   onCite,
 }: {
   text: string;
-  onCite: (ref: number) => void;
+  /** Card key: `s1` for statute [1], `d1` for document [D1]. */
+  onCite: (key: string) => void;
 }) {
   return (
     <ReactMarkdown
@@ -80,12 +81,12 @@ export default function AnswerMarkdown({
           </code>
         ),
         a: ({ href, title, children }) => {
-          const m = typeof href === "string" && href.match(/^#cite-(\d+)$/);
+          const m = typeof href === "string" && href.match(/^#cite-([sd])(\d+)$/);
           if (m) {
-            const ref = Number(m[1]);
+            const key = `${m[1]}${m[2]}`;
             return (
               <button
-                onClick={() => onCite(ref)}
+                onClick={() => onCite(key)}
                 title={title ?? undefined}
                 className="cursor-pointer font-semibold text-gold-light underline-offset-2 hover:text-gold hover:underline"
               >

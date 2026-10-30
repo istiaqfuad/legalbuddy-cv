@@ -35,3 +35,27 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS messages_conversation_idx
   ON messages(conversation_id, created_at ASC);
+
+-- User-uploaded documents. Vectors live in Qdrant (`user-documents`,
+-- keyed by user_id + doc_id); this table is the metadata of record, so
+-- listings and deletes never depend on vector-store scrolls.
+CREATE TABLE IF NOT EXISTS documents (
+  id TEXT PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  filename TEXT NOT NULL,
+  mime TEXT NOT NULL DEFAULT 'application/octet-stream',
+  size_bytes INTEGER NOT NULL DEFAULT 0,
+  chunk_count INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS documents_user_idx
+  ON documents(user_id, created_at DESC);
+
+-- Documents attached to a conversation: scoping retrieval to the
+-- conversation's own files.
+CREATE TABLE IF NOT EXISTS conversation_documents (
+  conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (conversation_id, document_id)
+);

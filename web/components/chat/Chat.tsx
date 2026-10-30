@@ -8,6 +8,8 @@ import HistorySidebar from "./HistorySidebar";
 import SourcesSidebar from "./SourcesSidebar";
 import ThinkingDots from "./ThinkingDots";
 
+const ACCEPTED_FILES = ".pdf,.docx,.txt,.md";
+
 /** Conversation view. Owns input focus, scroll following, and layout.
  * All conversation state lives in the chat store; cited sections live
  * in the sidebar and appear only on demand.
@@ -23,10 +25,31 @@ export default function Chat() {
   const openSources = useChatStore((s) => s.openSources);
   const newChat = useChatStore((s) => s.newChat);
   const toggleHistory = useChatStore((s) => s.toggleHistory);
+  const attachedIds = useChatStore((s) => s.attachedIds);
+  const documents = useChatStore((s) => s.documents);
+  const uploading = useChatStore((s) => s.uploading);
+  const uploadError = useChatStore((s) => s.uploadError);
+  const refreshDocuments = useChatStore((s) => s.refreshDocuments);
+  const uploadDocument = useChatStore((s) => s.uploadDocument);
+  const attachDocument = useChatStore((s) => s.attachDocument);
+  const detachDocument = useChatStore((s) => s.detachDocument);
+  const removeDocument = useChatStore((s) => s.removeDocument);
 
   const [input, setInput] = useState("");
   const [copied, setCopied] = useState<number | null>(null);
+  const [showLibrary, setShowLibrary] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    void refreshDocuments();
+  }, [refreshDocuments]);
+
+  const attached = attachedIds.flatMap((id) => {
+    const doc = documents.find((d) => d.doc_id === id);
+    return doc ? [doc] : [];
+  });
+  const libraryUnattached = documents.filter((d) => !attachedIds.includes(d.doc_id));
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -126,7 +149,7 @@ export default function Chat() {
                     {msg.text ? (
                       <AnswerMarkdown
                         text={msg.text}
-                        onCite={(ref) => openSources(msg.citations ?? [], ref)}
+                        onCite={(key) => openSources(msg.citations ?? [], key)}
                       />
                     ) : (
                       <p className="flex items-center gap-2 text-stone-400">
@@ -175,7 +198,13 @@ export default function Chat() {
                       onClick={() => openSources(msg.citations ?? [], null)}
                       className="mt-1 cursor-pointer text-xs font-medium text-stone-500 transition-colors hover:text-gold-light"
                     >
-                      Sources · {msg.citations.length} cited sections →
+                      {(() => {
+                        const laws = msg.citations.filter((c) => c.kind !== "document").length;
+                        const files = msg.citations.length - laws;
+                        return files > 0
+                          ? `Sources · ${laws} law · ${files} your file${files > 1 ? "s" : ""} →`
+                          : `Sources · ${msg.citations.length} cited sections →`;
+                      })()}
                     </button>
                   ) : null}
                 </div>
@@ -194,7 +223,97 @@ export default function Chat() {
         </div>
 
         <div className="border-t border-stone-800/80 bg-ink px-4 py-3 sm:px-6">
+          {(attached.length > 0 || uploadError) && (
+            <div className="mx-auto mb-2 flex max-w-3xl flex-wrap items-center gap-1.5">
+              {attached.map((d) => (
+                <span
+                  key={d.doc_id}
+                  className="flex max-w-56 items-center gap-1.5 rounded-md border border-gold/40 bg-gold/15 px-2 py-1 text-xs text-stone-200"
+                  title={`${d.filename} · attached to this chat`}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
+                    <path d="M14 2v6h6" />
+                  </svg>
+                  <span className="truncate">{d.filename}</span>
+                  <button
+                    onClick={() => void detachDocument(d.doc_id)}
+                    className="shrink-0 rounded text-stone-400 transition-colors hover:text-stone-100"
+                    title={`Detach ${d.filename}`}
+                    aria-label={`Detach ${d.filename}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              {uploadError ? <span className="text-xs text-red-300">{uploadError}</span> : null}
+            </div>
+          )}
+          {showLibrary && libraryUnattached.length > 0 ? (
+            <div className="mx-auto mb-2 max-w-3xl rounded-md border border-stone-800 bg-stone-900/60 p-2">
+              <p className="px-1 pb-1 text-[11px] font-medium tracking-wide text-stone-500 uppercase">
+                Your files
+              </p>
+              {libraryUnattached.map((d) => (
+                <div key={d.doc_id} className="flex items-center gap-2 rounded px-1 py-1.5 hover:bg-stone-800/60">
+                  <button
+                    onClick={() => {
+                      void attachDocument(d.doc_id);
+                      setShowLibrary(false);
+                    }}
+                    className="min-w-0 flex-1 truncate text-left text-sm text-stone-200"
+                    title={`Attach ${d.filename}`}
+                  >
+                    {d.filename}
+                  </button>
+                  <button
+                    onClick={() => void removeDocument(d.doc_id)}
+                    className="shrink-0 rounded px-1.5 py-0.5 text-xs text-stone-500 transition-colors hover:text-red-300"
+                    title={`Delete ${d.filename} everywhere`}
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
           <div className="mx-auto flex max-w-3xl items-center gap-2">
+            <input
+              ref={fileRef}
+              type="file"
+              accept={ACCEPTED_FILES}
+              className="hidden"
+              aria-hidden
+              tabIndex={-1}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (f) void uploadDocument(f);
+              }}
+            />
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={pending || uploading}
+              className="shrink-0 rounded-md p-2 text-stone-400 transition-colors hover:bg-stone-800/60 hover:text-stone-100 disabled:opacity-40"
+              title="Attach a file (PDF, Word, text, Markdown)"
+              aria-label="Attach a file"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="m21.4 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+              </svg>
+            </button>
+            <button
+              onClick={() => setShowLibrary((v) => !v)}
+              disabled={pending || documents.length === 0}
+              className="shrink-0 rounded-md p-2 text-stone-400 transition-colors hover:bg-stone-800/60 hover:text-stone-100 disabled:opacity-40"
+              title={documents.length === 0 ? "No uploaded files yet" : "Attach from your files"}
+              aria-label="Attach from your files"
+              aria-expanded={showLibrary}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+              </svg>
+            </button>
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -204,8 +323,8 @@ export default function Chat() {
                   submit(input);
                 }
               }}
-              placeholder="Ask in your own words…"
-              disabled={pending}
+              placeholder={uploading ? "Reading your file…" : "Ask in your own words…"}
+              disabled={pending || uploading}
               aria-label="Ask a legal question"
               className="min-w-0 flex-1 rounded-md border border-stone-700 bg-stone-900/60 px-3 py-2 text-sm text-stone-100 placeholder:text-stone-500 focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none disabled:opacity-60"
             />
