@@ -1,9 +1,12 @@
 /** Conversation state: the single seam for everything chat-related.
  *
- * Interface: `messages`, `pending`, `failed`, `flash`, plus `send`,
- * `stop`, `regenerate`, history actions, and sidebar controls. All
- * streaming orchestration, accumulation, persistence, and failure
- * cleanup live inside; components only render and forward user intent.
+ * Interface: `messages` (the visible chat), `pending` (the visible chat is
+ * streaming), `failed`, `flash`, plus `send`, `stop`, `regenerate`,
+ * history actions, and sidebar controls. Streaming runs per conversation
+ * in the background: switching chats never stops or corrupts a running
+ * answer. `buffers` holds every live conversation's messages, `busy`
+ * marks which conversations are streaming, and `messages` simply mirrors
+ * the buffer of the active one. Components only render and forward intent.
  */
 
 import { create } from "zustand";
@@ -34,6 +37,10 @@ async function saveMessage(
 interface ChatState {
   messages: ChatMessage[];
   pending: boolean;
+  /** Per-conversation message buffers; `messages` mirrors the active one. */
+  buffers: Record<string, ChatMessage[]>;
+  /** Conversations with a live stream right now. */
+  busy: Record<string, boolean>;
   failed: boolean;
   flash: string | null;
   /** Sidebar source list. `citations` belongs to the message that opened it. */
@@ -76,8 +83,15 @@ interface ChatState {
 }
 
 let flashTimer: ReturnType<typeof setTimeout> | null = null;
-/** Aborts the in-flight answer stream; replaced on every send. */
-let streamAbort: AbortController | null = null;
+/**
+ * One live stream per conversation. A new run in the same conversation
+ * bumps its generation: late events from the superseded run fail the
+ * `alive` check and can neither write state nor save messages. Deleting a
+ * conversation bumps its generation first, so an abort that lands late
+ * cannot resurrect it.
+ */
+const streamControllers: Record<string, AbortController> = {};
+const streamGen: Record<string, number> = {};
 
 function replaceAt(
   messages: ChatMessage[],
@@ -88,9 +102,18 @@ function replaceAt(
 }
 
 export const useChatStore = create<ChatState>()((set, get) => {
-  /** Stream one answer into `messages[assistantId]` and persist it. */
-  async function runAssistant(question: string, assistantId: number): Promise<void> {
-    const conversationId = get().activeId;
+  /**
+   * Stream one answer into `buffers[conversationId][assistantId]`.
+   * The visible `messages` mirrors the buffer only while its conversation
+   * is active, so navigating away neither stops nor corrupts the stream.
+   * The generation token makes superseded runs (stop-then-send, delete)
+   * harmless: their late events fail `alive` and write nothing.
+   */
+  async function runAssistant(
+    question: string,
+    assistantId: number,
+    conversationId: string,
+  ): Promise<void> {
     const docIds = get().attachedIds;
     // Local accumulator: state reads would go stale when several token
     // events land in one read chunk.
@@ -98,26 +121,41 @@ export const useChatStore = create<ChatState>()((set, get) => {
     let finalCitations: Citation[] = [];
     let finished = false;
     const ctrl = new AbortController();
-    streamAbort = ctrl;
+    streamControllers[conversationId] = ctrl;
+    const gen = (streamGen[conversationId] ?? 0) + 1;
+    streamGen[conversationId] = gen;
+    const alive = () => streamGen[conversationId] === gen;
+    set((s) => ({
+      busy: { ...s.busy, [conversationId]: true },
+      ...(conversationId === s.activeId ? { pending: true } : {}),
+    }));
+    /** Patch the buffer; mirror to the view only when active. */
+    const patch = (fn: (msgs: ChatMessage[]) => ChatMessage[]) =>
+      set((s) => {
+        const next = fn(s.buffers[conversationId] ?? []);
+        const buffers = { ...s.buffers, [conversationId]: next };
+        return conversationId === s.activeId ? { buffers, messages: next } : { buffers };
+      });
     try {
       for await (const ev of streamChat(question, {
         signal: ctrl.signal,
         docIds,
-        conversationId: conversationId ?? undefined,
+        conversationId,
       })) {
+        if (!alive()) return;
         if (ev.type === "token") {
           acc += ev.text;
           const text = acc;
-          set((s) => ({ messages: replaceAt(s.messages, assistantId, { text }) }));
+          patch((msgs) => replaceAt(msgs, assistantId, { text }));
         } else {
           if (ev.citations.length > 0 || ev.type === "done") {
             if (ev.citations.length > 0) finalCitations = ev.citations;
-            set((s) => ({
-              messages: replaceAt(s.messages, assistantId, {
+            patch((msgs) =>
+              replaceAt(msgs, assistantId, {
                 ...(ev.citations.length > 0 ? { citations: ev.citations } : {}),
                 ...(ev.type === "done" && ev.answer ? { text: ev.answer } : {}),
               }),
-            }));
+            );
           }
           if (ev.type === "done" && ev.answer) {
             finished = true;
@@ -125,9 +163,10 @@ export const useChatStore = create<ChatState>()((set, get) => {
           }
         }
       }
+      if (!alive()) return;
       // Stream ended with neither tokens nor a final answer: failure, not silence.
       if (!acc && !finished) throw new Error("empty stream");
-      if (conversationId && finished) {
+      if (finished) {
         await saveMessage(conversationId, {
           role: "assistant",
           content: acc,
@@ -143,10 +182,11 @@ export const useChatStore = create<ChatState>()((set, get) => {
         }));
       }
     } catch {
+      if (!alive()) return;
       if (ctrl.signal.aborted) {
         // The user stopped it: keep the partial answer, save what exists,
         // and stay quiet instead of showing the error banner.
-        if (acc && conversationId) {
+        if (acc) {
           await saveMessage(conversationId, {
             role: "assistant",
             content: acc,
@@ -154,27 +194,40 @@ export const useChatStore = create<ChatState>()((set, get) => {
           });
         }
         if (!acc) {
-          set((s) => ({ messages: s.messages.filter((_, i) => i !== assistantId) }));
+          patch((msgs) => msgs.filter((_, i) => i !== assistantId));
         }
         return;
       }
-      set((s) => {
-        const target = s.messages[assistantId];
-        const messages =
-          target && target.role === "assistant" && !target.text
-            ? s.messages.filter((_, i) => i !== assistantId)
-            : s.messages;
-        return { messages, failed: true };
+      patch((msgs) => {
+        const target = msgs[assistantId];
+        return target && target.role === "assistant" && !target.text
+          ? msgs.filter((_, i) => i !== assistantId)
+          : msgs;
       });
+      // A background failure must not raise the banner on another chat.
+      if (conversationId === get().activeId) set({ failed: true });
     } finally {
-      if (streamAbort === ctrl) streamAbort = null;
-      set({ pending: false });
+      if (streamControllers[conversationId] === ctrl) {
+        delete streamControllers[conversationId];
+      }
+      if (alive()) {
+        set((s) => {
+          const busy = { ...s.busy };
+          delete busy[conversationId];
+          return {
+            busy,
+            ...(conversationId === s.activeId ? { pending: false } : {}),
+          };
+        });
+      }
     }
   }
 
   return {
     messages: [],
     pending: false,
+    buffers: {},
+    busy: {},
     failed: false,
     flash: null,
     sidebarOpen: false,
@@ -282,10 +335,12 @@ export const useChatStore = create<ChatState>()((set, get) => {
       }
     },
 
+    // View-only: background streams keep running in their own buffers.
     newChat: () =>
       set({
         messages: [],
         activeId: null,
+        pending: false,
         failed: false,
         sidebarOpen: false,
         sidebarCitations: [],
@@ -294,8 +349,36 @@ export const useChatStore = create<ChatState>()((set, get) => {
       }),
 
     openConversation: async (id) => {
-      if (get().pending) return;
-      set({ historyLoading: true, failed: false, sidebarOpen: false });
+      if (id === get().activeId) return;
+      // A live buffer beats a server fetch: the server copy lacks the
+      // in-flight partial answer.
+      const buffered = get().buffers[id];
+      set({
+        activeId: id,
+        failed: false,
+        sidebarOpen: false,
+        pending: !!get().busy[id],
+        ...(buffered ? { messages: buffered } : {}),
+      });
+      if (buffered) {
+        try {
+          const linkRes = await fetch(`/api/conversations/${id}/documents`);
+          if (linkRes.ok) {
+            const linkData = await linkRes.json();
+            const ids = Array.isArray(linkData?.documents)
+              ? linkData.documents.map((d: { doc_id: string }) => d.doc_id)
+              : [];
+            set({ attachedIds: ids });
+          } else {
+            set({ attachedIds: [] });
+          }
+        } catch (err) {
+          console.error("attached documents load failed", err);
+          set({ attachedIds: [] });
+        }
+        return;
+      }
+      set({ historyLoading: true });
       try {
         const res = await fetch(`/api/conversations/${id}`);
         if (!res.ok) throw new Error("not found");
@@ -307,7 +390,15 @@ export const useChatStore = create<ChatState>()((set, get) => {
             citations: Array.isArray(m.citations) ? m.citations : [],
           }),
         );
-        set({ messages, activeId: id, expandedRef: null, sidebarCitations: [] });
+        // Seed the buffer so a later stream (or a revisit) patches this
+        // same array instead of diverging from the view.
+        set((s) => ({
+          messages,
+          activeId: id,
+          expandedRef: null,
+          sidebarCitations: [],
+          buffers: { ...s.buffers, [id]: messages },
+        }));
         try {
           const linkRes = await fetch(`/api/conversations/${id}/documents`);
           if (linkRes.ok) {
@@ -349,18 +440,32 @@ export const useChatStore = create<ChatState>()((set, get) => {
     },
 
     deleteConversation: async (id) => {
-      set((s) => ({
-        conversations: s.conversations.filter((c) => c.id !== id),
-        ...(s.activeId === id
-          ? {
-              activeId: null,
-              messages: [],
-              sidebarOpen: false,
-              sidebarCitations: [],
-              attachedIds: [],
-            }
-          : {}),
-      }));
+      // Invalidate first: a late abort or buffered event from the dying
+      // stream fails the generation check and writes nothing.
+      streamGen[id] = (streamGen[id] ?? 0) + 1;
+      streamControllers[id]?.abort();
+      delete streamControllers[id];
+      set((s) => {
+        const buffers = { ...s.buffers };
+        delete buffers[id];
+        const busy = { ...s.busy };
+        delete busy[id];
+        return {
+          buffers,
+          busy,
+          conversations: s.conversations.filter((c) => c.id !== id),
+          ...(s.activeId === id
+            ? {
+                activeId: null,
+                messages: [],
+                pending: false,
+                sidebarOpen: false,
+                sidebarCitations: [],
+                attachedIds: [],
+              }
+            : {}),
+        };
+      });
       try {
         await fetch(`/api/conversations/${id}`, { method: "DELETE" });
       } catch (err) {
@@ -392,7 +497,9 @@ export const useChatStore = create<ChatState>()((set, get) => {
 
     send: async (question) => {
       const q = question.trim();
-      if (!q || get().pending) return;
+      // Only the visible chat blocks sending; other conversations may keep
+      // streaming in the background.
+      if (!q || get().busy[get().activeId ?? ""] || get().historyLoading) return;
       // Persist first: brand-new chats get a conversation row titled by
       // the opening question, so history survives reloads mid-stream.
       if (!get().activeId) {
@@ -427,27 +534,34 @@ export const useChatStore = create<ChatState>()((set, get) => {
         }
       }
       const conversationId = get().activeId;
+      // Creation can fail (offline, 401): without an id there is nowhere
+      // to scope the stream, so bail out instead of streaming nowhere.
+      if (!conversationId) return;
       const id = get().messages.length + 1;
+      const next = [
+        ...get().messages,
+        { role: "user", text: q },
+        { role: "assistant", text: "", citations: [] },
+      ] as ChatMessage[];
       set((s) => ({
         failed: false,
         pending: true,
-        messages: [
-          ...s.messages,
-          { role: "user", text: q },
-          { role: "assistant", text: "", citations: [] },
-        ],
+        messages: next,
+        buffers: { ...s.buffers, [conversationId]: next },
       }));
-      if (conversationId) void saveMessage(conversationId, { role: "user", content: q });
-      await runAssistant(q, id);
+      void saveMessage(conversationId, { role: "user", content: q });
+      await runAssistant(q, id, conversationId);
     },
 
     stop: () => {
-      streamAbort?.abort();
+      const activeId = get().activeId;
+      if (activeId) streamControllers[activeId]?.abort();
     },
 
     regenerate: async () => {
       const msgs = get().messages;
-      if (get().pending || msgs.length === 0) return;
+      const activeId = get().activeId;
+      if (!activeId || get().busy[activeId] || msgs.length === 0) return;
       let userIdx = -1;
       for (let i = msgs.length - 1; i >= 0; i--) {
         if (msgs[i].role === "user") {
@@ -458,16 +572,18 @@ export const useChatStore = create<ChatState>()((set, get) => {
       if (userIdx < 0) return;
       const q = msgs[userIdx].text;
       const assistantId = userIdx + 1;
+      const next = [
+        ...msgs.slice(0, userIdx + 1),
+        { role: "assistant", text: "", citations: [] },
+      ] as ChatMessage[];
       set((s) => ({
         failed: false,
         pending: true,
-        messages: [
-          ...s.messages.slice(0, userIdx + 1),
-          { role: "assistant", text: "", citations: [] },
-        ],
+        messages: next,
+        buffers: { ...s.buffers, [activeId]: next },
       }));
       // The question is already saved; only the fresh answer persists.
-      await runAssistant(q, assistantId);
+      await runAssistant(q, assistantId, activeId);
     },
   };
 });

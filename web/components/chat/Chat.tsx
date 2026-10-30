@@ -135,7 +135,6 @@ export default function Chat() {
           </button>
           <button
             onClick={newChat}
-            disabled={pending}
             className="rounded-md p-2 text-stone-400 transition-colors hover:bg-stone-800/60 hover:text-stone-100 disabled:opacity-40"
             title="Start a new chat"
             aria-label="Start a new chat"

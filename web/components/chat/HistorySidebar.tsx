@@ -10,7 +10,7 @@ export default function HistorySidebar() {
   const open = useChatStore((s) => s.historyOpen);
   const activeId = useChatStore((s) => s.activeId);
   const conversations = useChatStore((s) => s.conversations);
-  const pending = useChatStore((s) => s.pending);
+  const busy = useChatStore((s) => s.busy);
   const historyLoading = useChatStore((s) => s.historyLoading);
   const refreshConversations = useChatStore((s) => s.refreshConversations);
   const newChat = useChatStore((s) => s.newChat);
@@ -102,17 +102,24 @@ export default function HistorySidebar() {
                     aria-label="Rename conversation"
                   />
                 ) : (
-                  <button
-                    onClick={() => {
-                      void openConversation(c.id);
-                      if (window.innerWidth < 768) setHistoryOpen(false);
-                    }}
-                    disabled={pending}
-                    className="min-w-0 flex-1 truncate text-left disabled:cursor-wait"
-                    title={c.title}
-                  >
-                    {c.title}
-                  </button>
+                  <>
+                    <button
+                      onClick={() => {
+                        void openConversation(c.id);
+                        if (window.innerWidth < 768) setHistoryOpen(false);
+                      }}
+                      className="min-w-0 flex-1 truncate text-left"
+                      title={c.title}
+                    >
+                      {c.title}
+                    </button>
+                    {busy[c.id] && (
+                      <span
+                        className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-gold"
+                        title="Still answering in this chat"
+                      />
+                    )}
+                  </>
                 )}
                 {renamingId !== c.id && (
                   <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
