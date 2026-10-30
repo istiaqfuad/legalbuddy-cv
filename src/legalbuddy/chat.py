@@ -20,6 +20,7 @@ from legalbuddy.store import (
     dbsf_search,
     hybrid_search,
     make_client,
+    search_user_docs,
     weighted_search,
 )
 
@@ -29,9 +30,13 @@ BASE_URL = "https://inference.baseten.co/v1"
 MAX_TOKENS = 2048
 
 SYSTEM_PROMPT = """You are LegalBuddy, a Bangladesh legal research assistant. \
-Answer ONLY from the statute excerpts in EVIDENCE. Every material legal claim \
-must end with a citation like [1], [2] referring to the numbered excerpts. \
-If the evidence does not support an answer, say so plainly instead of guessing. \
+Answer ONLY from the excerpts in EVIDENCE. Every material claim must end \
+with a citation: [1], [2], … for statute excerpts, [D1], [D2], … for the \
+user's own document excerpts. If the evidence does not support an answer, \
+say so plainly instead of guessing. The user's documents describe THEIR \
+situation; the statutes describe the LAW. Use the documents for the facts \
+of their case and the statutes for what the law says; if they conflict, \
+say which source says what instead of picking one silently. \
 Distinguish: (1) what the law states, (2) your interpretation, (3) recommended \
 next steps. Reply in the same language as the question (English or Bangla). \
 End with one line: 'Note: research assistance only, not a substitute for a lawyer.'"""
@@ -49,6 +54,10 @@ class Citation:
     source_url: str
     chunk_id: str
     score: float
+    # Document citations: kind="document", ref renders as [Dn].
+    kind: str = "statute"
+    doc_filename: str = ""
+    doc_page: int | None = None
 
 
 @dataclass
@@ -86,6 +95,34 @@ def retrieve(question: str, language: str | None = None,
         make_client(), dense_q, sparse_q, limit=limit, query_filter=query_filter)
 
 
+def retrieve_docs(question: str, user_id: str, doc_ids: list[str], limit: int = 4):
+    """Hybrid retrieve over the user's attached documents (filtered, isolated)."""
+    dense = VoyageDense()
+    dense_q = dense.embed([question], input_type="query")[0]
+    sparse_q = encode_sparse([question])[0]
+    return search_user_docs(make_client(), dense_q, sparse_q, user_id, doc_ids,
+                            limit=limit)
+
+
+def _doc_evidence_block(hits, start: int) -> tuple[str, list[Citation]]:
+    lines: list[str] = []
+    citations: list[Citation] = []
+    for j, p in enumerate(hits.points, start=start):
+        pl = p.payload or {}
+        citations.append(Citation(
+            ref=j,
+            act_title="", act_no="", act_year="", section_label="",
+            section_title="", excerpt=str(pl.get("text", ""))[:1200],
+            source_url="", chunk_id=str(p.id), score=float(p.score),
+            kind="document",
+            doc_filename=str(pl.get("filename", "")),
+            doc_page=pl.get("page"),
+        ))
+        page = f", page {pl.get('page')}" if pl.get("page") else ""
+        lines.append(f"[D{j}] {pl.get('filename')}{page}\n{pl.get('text', '')[:1500]}")
+    return "\n\n".join(lines), citations
+
+
 def _evidence_block(hits) -> tuple[str, list[Citation]]:
     lines: list[str] = []
     citations: list[Citation] = []
@@ -112,18 +149,34 @@ def _evidence_block(hits) -> tuple[str, list[Citation]]:
 
 
 def stream_answer(question: str, language: str | None = None,
-                  act_year: str | None = None, limit: int = 8):
+                  act_year: str | None = None, limit: int = 8,
+                  user_id: str | None = None,
+                  doc_ids: list[str] | None = None, doc_limit: int = 4):
     """Yield ``("meta", dict)``, ``("token", str)``..., then ``("done", Answer)``.
 
     ``meta`` carries the citations up front so the UI can show what the
     answer will stand on; tokens stream from Baseten as they arrive.
+    When ``user_id`` + ``doc_ids`` are given, the attached user documents
+    are retrieved (isolated to that user) and merged as [D1]… evidence.
     """
     hits = retrieve(question, language=language, act_year=act_year, limit=limit)
-    if not hits.points:
+    evidence, citations = _evidence_block(hits)
+    doc_ids = [d for d in (doc_ids or []) if d]
+    if user_id and doc_ids:
+        try:
+            doc_hits = retrieve_docs(question, user_id, doc_ids, limit=doc_limit)
+        except Exception:
+            doc_hits = None
+        if doc_hits is not None and doc_hits.points:
+            # Statute refs stay [1..n]; document refs run [D1..m].
+            doc_evidence, doc_cites = _doc_evidence_block(doc_hits, start=1)
+            evidence += ("\n\nEVIDENCE FROM YOUR DOCUMENTS "
+                         "(cite as [D1], [D2], ...):\n" + doc_evidence)
+            citations = citations + doc_cites
+    if not citations:
         yield ("done", Answer(text="I could not verify this from the available sources.",
                               citations=[]))
         return
-    evidence, citations = _evidence_block(hits)
     yield ("meta", {"citations": citations, "model": CHAT_MODEL})
     stream = _client().chat.completions.create(
         model=CHAT_MODEL,
@@ -153,11 +206,15 @@ def stream_answer(question: str, language: str | None = None,
 
 
 def answer(question: str, language: str | None = None,
-           act_year: str | None = None, limit: int = 8) -> Answer:
+           act_year: str | None = None, limit: int = 8,
+           user_id: str | None = None,
+           doc_ids: list[str] | None = None, doc_limit: int = 4) -> Answer:
     """Retrieve evidence and generate a cited answer (non-streaming)."""
     final: Answer | None = None
     for kind, val in stream_answer(question, language=language,
-                                   act_year=act_year, limit=limit):
+                                   act_year=act_year, limit=limit,
+                                   user_id=user_id, doc_ids=doc_ids,
+                                   doc_limit=doc_limit):
         if kind == "done":
             final = val
     assert final is not None

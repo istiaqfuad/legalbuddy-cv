@@ -22,7 +22,7 @@ import os
 from typing import Literal
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -51,6 +51,10 @@ class ChatRequest(BaseModel):
     language: Language | None = None
     act_year: str | None = Field(default=None, max_length=4)
     limit: int = Field(default=6, ge=1, le=10)
+    # Attached user documents: ids scoped to user_id (Next.js injects the
+    # session user; retrieval filters both server-side).
+    user_id: str | None = Field(default=None, max_length=64)
+    doc_ids: list[str] = Field(default_factory=list, max_length=10)
 
 
 class CitationOut(BaseModel):
@@ -63,6 +67,9 @@ class CitationOut(BaseModel):
     excerpt: str
     source_url: str
     score: float
+    kind: str = "statute"
+    doc_filename: str = ""
+    doc_page: int | None = None
 
 
 class ChatResponse(BaseModel):
@@ -96,7 +103,8 @@ def post_chat(req: ChatRequest) -> ChatResponse:
     """Grounded answer + section citations for one question."""
     try:
         ans = chat_mod.answer(req.question, language=req.language,
-                              act_year=req.act_year, limit=req.limit)
+                              act_year=req.act_year, limit=req.limit,
+                              user_id=req.user_id, doc_ids=req.doc_ids)
     except Exception:  # retrieval or generation failure -> 502, not 500
         # Never leak internals (tracebacks, hostnames, SDK errors) to callers;
         # the full traceback stays in the server log.
@@ -116,11 +124,147 @@ def _citation_out(c) -> CitationOut:
         ref=c.ref, act_title=c.act_title, act_no=c.act_no, act_year=c.act_year,
         section_label=c.section_label, section_title=c.section_title,
         excerpt=c.excerpt, source_url=c.source_url, score=c.score,
+        kind=c.kind, doc_filename=c.doc_filename, doc_page=c.doc_page,
     )
 
 
 def _sse(event: str, payload: str) -> str:
     return f"event: {event}\ndata: {payload}\n\n"
+
+
+class DocumentOut(BaseModel):
+    doc_id: str
+    filename: str
+    mime: str
+    chunks: int
+    created_at: str
+
+
+def _require_user(user_id: str | None) -> str:
+    user = (user_id or "").strip()
+    if not user:
+        raise HTTPException(status_code=401, detail="Sign in required.")
+    return user
+
+
+@app.post("/api/documents", response_model=DocumentOut)
+async def upload_document(user_id: str | None = Query(default=None, max_length=64),
+                          file: UploadFile = File(...)) -> DocumentOut:
+    """Ingest one user file: parse, chunk, embed, store (isolated by user).
+
+    ``user_id`` comes from the Next.js session (trusted internal network),
+    never from the browser directly. Embedding is synchronous, bounded by
+    the per-document chunk cap.
+    """
+    from datetime import datetime, timezone
+
+    from legalbuddy import documents as docs_mod
+    from legalbuddy.embedder import VoyageDense, encode_sparse
+    from legalbuddy.store import (
+        delete_doc_points,
+        ensure_docs_collection,
+        make_client,
+        upsert_doc_chunks,
+    )
+
+    user = _require_user(user_id)
+    filename = (file.filename or "upload").strip()[:120] or "upload"
+    data = await file.read()
+    try:
+        segments = docs_mod.parse_document(filename, data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    ext = os.path.splitext(filename)[1].lower()
+    mime = docs_mod.EXTENSION_MIME.get(ext, "application/octet-stream")
+    doc_id = docs_mod.new_doc_id()
+    chunks = docs_mod.chunk_document(doc_id, user, filename, mime, segments)
+    if not chunks:
+        raise HTTPException(status_code=400, detail="No readable text found.")
+    try:
+        client = make_client()
+        ensure_docs_collection(client)
+        dense = VoyageDense()
+        dense_vecs = dense.embed([c.text for c in chunks], input_type="document")
+        sparse_vecs = encode_sparse([c.text for c in chunks])
+        upsert_doc_chunks(client, chunks, dense_vecs, sparse_vecs)
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    except Exception:
+        log.exception("document ingest failed")
+        # Leave no half-ingested document behind.
+        try:
+            delete_doc_points(make_client(), user, doc_id)
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=502,
+            detail="Could not process the file. Please try again.") from None
+    return DocumentOut(doc_id=doc_id, filename=filename, mime=mime,
+                       chunks=len(chunks),
+                       created_at=datetime.now(timezone.utc).isoformat())
+
+
+@app.get("/api/documents", response_model=list[DocumentOut])
+def list_documents(user_id: str | None = Query(default=None, max_length=64)):
+    """List the user's documents (distinct doc_ids from the vector store)."""
+    from legalbuddy.store import DOCS_COLLECTION, ensure_docs_collection, make_client
+    from qdrant_client import models
+
+    user = _require_user(user_id)
+    client = make_client()
+    try:
+        ensure_docs_collection(client)
+        seen: dict[str, dict] = {}
+        offset = None
+        while True:
+            points, offset = client.scroll(
+                collection_name=DOCS_COLLECTION,
+                scroll_filter=models.Filter(must=[
+                    models.FieldCondition(key="user_id",
+                                          match=models.MatchValue(value=user))]),
+                limit=256, offset=offset, with_payload=True, with_vectors=False)
+            for p in points:
+                pl = p.payload or {}
+                did = str(pl.get("doc_id", ""))
+                if did and did not in seen:
+                    seen[did] = {
+                        "doc_id": did,
+                        "filename": str(pl.get("filename", "")),
+                        "mime": str(pl.get("mime", "")),
+                        "chunks": int(pl.get("chunk_count", 0) or 0),
+                        "created_at": "",
+                    }
+            if offset is None:
+                break
+    except HTTPException:
+        raise
+    except Exception:
+        log.exception("document list failed")
+        raise HTTPException(status_code=502,
+                            detail="Could not load documents.") from None
+    return [DocumentOut(**v) for v in seen.values()]
+
+
+@app.delete("/api/documents/{doc_id}")
+def delete_document(doc_id: str,
+                    user_id: str | None = Query(default=None, max_length=64)):
+    """Delete one document's vectors (always scoped to the session user)."""
+    from legalbuddy.store import delete_doc_points, ensure_docs_collection, make_client
+
+    user = _require_user(user_id)
+    try:
+        client = make_client()
+        ensure_docs_collection(client)
+        delete_doc_points(client, user, doc_id)
+    except HTTPException:
+        raise
+    except Exception:
+        log.exception("document delete failed")
+        raise HTTPException(status_code=502,
+                            detail="Could not delete the document.") from None
+    return {"ok": True}
 
 
 @app.post("/api/chat/stream")
@@ -134,7 +278,8 @@ def post_chat_stream(req: ChatRequest):
     def events():
         try:
             gen = chat_mod.stream_answer(req.question, language=req.language,
-                                         act_year=req.act_year, limit=req.limit)
+                                         act_year=req.act_year, limit=req.limit,
+                                         user_id=req.user_id, doc_ids=req.doc_ids)
             for kind, val in gen:
                 if kind == "meta":
                     yield _sse("meta", ChatResponse(

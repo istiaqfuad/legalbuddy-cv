@@ -25,9 +25,18 @@ import os
 from qdrant_client import QdrantClient, models
 
 COLLECTION = os.environ.get("COLLECTION_NAME", "legal-statutes")
+DOCS_COLLECTION = os.environ.get("DOCS_COLLECTION_NAME", "user-documents")
 DENSE_NAME = "denso"
 SPARSE_NAME = "sparso"
 DENSE_SIZE = 1024  # voyage-4 output dimension
+
+# Payload fields indexed on the user-documents collection. Both are part
+# of EVERY user-doc query filter (server-side, from the session — never
+# from client input), so keyword indexes keep filtered HNSW fast.
+DOCS_PAYLOAD_INDEXES: dict[str, str] = {
+    "user_id": "keyword",
+    "doc_id": "keyword",
+}
 
 # Payload fields that must carry an index on the collection.
 REQUIRED_PAYLOAD_INDEXES: dict[str, str] = {
@@ -118,6 +127,124 @@ def require_collection(client: QdrantClient, collection: str = COLLECTION) -> No
             + "\n".join(f"  - {p}" for p in problems)
             + "\nFix the collection settings (see README / ingest runbook); "
               "code never creates or mutates the collection.")
+
+
+def ensure_docs_collection(client: QdrantClient,
+                           collection: str = DOCS_COLLECTION) -> None:
+    """Create the user-documents collection on first upload if missing.
+
+    Unlike the curated legal-statutes collection (pre-provisioned, code
+    never mutates it), this one is app-managed: same vector contract
+    (``denso`` 1024 cosine + ``sparso`` idf) plus keyword indexes on
+    ``user_id``/``doc_id`` created up front so filtered search uses
+    indexed HNSW from the first point. Never merged with statute data.
+    """
+    try:
+        client.get_collection(collection)
+        return
+    except Exception:
+        pass  # missing (or unreachable here) — try to create below
+    client.create_collection(
+        collection_name=collection,
+        vectors_config={DENSE_NAME: models.VectorParams(size=DENSE_SIZE,
+                                                        distance=models.Distance.COSINE)},
+        sparse_vectors_config={SPARSE_NAME: models.SparseVectorParams(
+            modifier=models.Modifier.IDF)},
+    )
+    for field_name in DOCS_PAYLOAD_INDEXES:
+        client.create_payload_index(
+            collection_name=collection, field_name=field_name,
+            field_schema=models.PayloadSchemaType.KEYWORD)
+
+
+def doc_chunk_to_payload(chunk) -> dict:
+    """Payload for a user-doc point: isolation fields plus provenance."""
+    return {
+        # Indexed — every query filters user_id, and doc scoping adds doc_id.
+        "user_id": chunk.user_id,
+        "doc_id": chunk.doc_id,
+        # Unindexed display / provenance fields.
+        "text": chunk.text,
+        "filename": chunk.filename,
+        "mime": chunk.mime,
+        "page": chunk.page,
+        "chunk_index": chunk.chunk_index,
+        "chunk_count": chunk.chunk_count,
+    }
+
+
+def upsert_doc_chunks(client: QdrantClient, chunks, dense_vecs, sparse_vecs,
+                      collection: str = DOCS_COLLECTION,
+                      batch_size: int = 256) -> int:
+    """Upsert user-doc points (named vectors mirror the statute contract)."""
+    points = [
+        models.PointStruct(
+            id=chunk.chunk_id,
+            vector={
+                DENSE_NAME: dense,
+                SPARSE_NAME: models.SparseVector(indices=idx, values=val),
+            },
+            payload=doc_chunk_to_payload(chunk),
+        )
+        for chunk, dense, (idx, val) in zip(chunks, dense_vecs, sparse_vecs)
+    ]
+    for i in range(0, len(points), batch_size):
+        client.upsert(collection_name=collection, points=points[i:i + batch_size])
+    return len(points)
+
+
+def delete_doc_points(client: QdrantClient, user_id: str, doc_id: str,
+                      collection: str = DOCS_COLLECTION) -> None:
+    """Delete one document's points. user_id is always part of the filter."""
+    client.delete(
+        collection_name=collection,
+        points_selector=models.FilterSelector(filter=models.Filter(must=[
+            models.FieldCondition(key="user_id",
+                                  match=models.MatchValue(value=user_id)),
+            models.FieldCondition(key="doc_id",
+                                  match=models.MatchValue(value=doc_id)),
+        ])),
+        wait=True,
+    )
+
+
+def search_user_docs(client: QdrantClient, dense_query: list[float],
+                     sparse_query: tuple[list[int], list[float]],
+                     user_id: str, doc_ids: list[str], limit: int = 4,
+                     prefetch_limit: int = 20,
+                     collection: str = DOCS_COLLECTION):
+    """Hybrid search over a user's attached documents only.
+
+    The ``user_id`` + ``doc_ids`` filter is built here from server-side
+    values and applied inside the query (both prefetches), never as a
+    post-filter: other users' chunks cannot consume result slots, and a
+    missing filter returns nothing instead of everything.
+    """
+    s_idx, s_val = sparse_query
+    query_filter = models.Filter(must=[
+        models.FieldCondition(key="user_id", match=models.MatchValue(value=user_id)),
+        # Nested should-group: OR over the attached docs (a bare
+        # `should` list means at least one must match).
+        models.Filter(
+            should=[models.FieldCondition(key="doc_id",
+                                          match=models.MatchValue(value=d))
+                    for d in doc_ids]
+        ) if len(doc_ids) > 1 else
+        models.FieldCondition(key="doc_id", match=models.MatchValue(value=doc_ids[0])),
+    ])
+    return client.query_points(
+        collection_name=collection,
+        prefetch=[
+            models.Prefetch(query=dense_query, using=DENSE_NAME, limit=prefetch_limit,
+                            filter=query_filter),
+            models.Prefetch(
+                query=models.SparseVector(indices=s_idx, values=s_val),
+                using=SPARSE_NAME, limit=prefetch_limit, filter=query_filter),
+        ],
+        query=models.FusionQuery(fusion=models.Fusion.RRF),
+        limit=limit,
+        with_payload=True,
+    )
 
 
 def chunk_to_payload(chunk) -> dict:
