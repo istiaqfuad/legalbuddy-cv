@@ -100,7 +100,11 @@ export const useChatStore = create<ChatState>()((set, get) => {
     const ctrl = new AbortController();
     streamAbort = ctrl;
     try {
-      for await (const ev of streamChat(question, { signal: ctrl.signal, docIds })) {
+      for await (const ev of streamChat(question, {
+        signal: ctrl.signal,
+        docIds,
+        conversationId: conversationId ?? undefined,
+      })) {
         if (ev.type === "token") {
           acc += ev.text;
           const text = acc;

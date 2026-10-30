@@ -9,13 +9,23 @@ act-level and the section label + excerpt pinpoint the provision.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from dataclasses import dataclass, field
 
+log = logging.getLogger(__name__)
+
 from openai import OpenAI
 
 from legalbuddy.embedder import VoyageDense, encode_sparse
+from legalbuddy.memory import (
+    contextualize,
+    history_block,
+    needs_rewrite,
+    record_turn,
+    recent_turns,
+)
 from legalbuddy.store import (
     build_filter,
     dbsf_search,
@@ -38,6 +48,9 @@ say so plainly instead of guessing. The user's documents describe THEIR \
 situation; the statutes describe the LAW. Use the documents for the facts \
 of their case and the statutes for what the law says; if they conflict, \
 say which source says what instead of picking one silently. \
+A CONVERSATION SO FAR block may precede the question; use it only for \
+context (what "it" refers to, what was already covered), and ground every \
+legal claim in the EVIDENCE excerpts, never in earlier answers. \
 Distinguish: (1) what the law states, (2) your interpretation, (3) recommended \
 next steps. Reply in the same language as the question (English or Bangla). \
 End with one line: 'Note: research assistance only, not a substitute for a lawyer.'"""
@@ -218,7 +231,8 @@ def _evidence_block(hits) -> tuple[str, list[Citation]]:
 def stream_answer(question: str, language: str | None = None,
                   act_year: str | None = None, limit: int = 8,
                   user_id: str | None = None,
-                  doc_ids: list[str] | None = None, doc_limit: int = 4):
+                  doc_ids: list[str] | None = None, doc_limit: int = 4,
+                  conversation_id: str | None = None):
     """Yield ``("meta", dict)``, ``("token", str)``..., then ``("done", Answer)``.
 
     ``meta`` carries the citations up front so the UI can show what the
@@ -226,9 +240,32 @@ def stream_answer(question: str, language: str | None = None,
     When ``user_id`` + ``doc_ids`` are given, the attached user documents
     are retrieved first (isolated to that user), the statute search then
     keys on question + file facts, and both merge as [1]… + [D1]… evidence.
+    When ``conversation_id`` is given, past turns load from the Postgres
+    memory store: follow-ups ("what about the punishment?") are rewritten
+    into standalone questions for retrieval, and a short verbatim window
+    joins the generation prompt for context. The finished turn is recorded
+    back to the memory store (best-effort, never breaks answering).
     """
+    history = recent_turns(conversation_id) if conversation_id else []
+    if needs_rewrite(question, history):
+        standalone = contextualize(question, history, _client(), CHAT_MODEL)
+        if standalone.strip().lower() == question.strip().lower():
+            # The model echoed instead of resolving: fall back to expanding
+            # with earlier user questions (deterministic, no extra LLM call).
+            prior = [t["content"] for t in history
+                     if t.get("role") == "user"][-3:]
+            if prior:
+                standalone = (question + "\n\nEARLIER QUESTIONS IN THIS "
+                              "CONVERSATION:\n" + "\n".join(prior))
+        # Permanent one-line record of the rewrite: the only way to tell a
+        # good resolution ("And the punishment?" -> section 302) from a bad
+        # one when a follow-up retrieves poorly.
+        log.info("[MEM-rewrite] conv=%s turns=%d %r -> %r",
+                 conversation_id, len(history) // 2, question, standalone)
+    else:
+        standalone = question
     hits, doc_hits, _ = retrieve_grounded(
-        question, language=language, act_year=act_year, limit=limit,
+        standalone, language=language, act_year=act_year, limit=limit,
         user_id=user_id, doc_ids=doc_ids, doc_limit=doc_limit)
     evidence, citations = _evidence_block(hits)
     if doc_hits is not None and doc_hits.points:
@@ -239,16 +276,24 @@ def stream_answer(question: str, language: str | None = None,
                      + doc_evidence[:DOC_EVIDENCE_CHARS])
         citations = citations + doc_cites
     if not citations:
-        yield ("done", Answer(text="I could not verify this from the available sources.",
-                              citations=[]))
+        text = "I could not verify this from the available sources."
+        if conversation_id:
+            record_turn(conversation_id, question, text)
+        yield ("done", Answer(text=text, citations=[]))
         return
+    prompt = f"QUESTION: {standalone}\n\nEVIDENCE:\n{evidence}"
+    if history:
+        # Verbatim window is context for phrasing; legal claims must still
+        # ground in EVIDENCE (the system prompt enforces this).
+        prompt = (f"CONVERSATION SO FAR:\n{history_block(history)}\n\n"
+                  f"CURRENT QUESTION: {standalone}\n\n"
+                  f"EVIDENCE:\n{evidence}")
     yield ("meta", {"citations": citations, "model": CHAT_MODEL})
     stream = _client().chat.completions.create(
         model=CHAT_MODEL,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user",
-             "content": f"QUESTION: {question}\n\nEVIDENCE:\n{evidence}"},
+            {"role": "user", "content": prompt},
         ],
         max_tokens=MAX_TOKENS,
         temperature=0.1,
@@ -267,19 +312,23 @@ def stream_answer(question: str, language: str | None = None,
     text = "".join(parts)
     if not text.strip():
         raise RuntimeError("Empty chat completion (reasoning exhausted token budget?)")
+    if conversation_id:
+        record_turn(conversation_id, question, text)
     yield ("done", Answer(text=text, citations=citations))
 
 
 def answer(question: str, language: str | None = None,
            act_year: str | None = None, limit: int = 8,
            user_id: str | None = None,
-           doc_ids: list[str] | None = None, doc_limit: int = 4) -> Answer:
+           doc_ids: list[str] | None = None, doc_limit: int = 4,
+           conversation_id: str | None = None) -> Answer:
     """Retrieve evidence and generate a cited answer (non-streaming)."""
     final: Answer | None = None
     for kind, val in stream_answer(question, language=language,
                                    act_year=act_year, limit=limit,
                                    user_id=user_id, doc_ids=doc_ids,
-                                   doc_limit=doc_limit):
+                                   doc_limit=doc_limit,
+                                   conversation_id=conversation_id):
         if kind == "done":
             final = val
     assert final is not None

@@ -17,7 +17,7 @@ const UPSTREAM_TIMEOUT_MS = 180_000;
 const GENERIC_ERROR = "The assistant is unavailable right now. Please try again in a moment.";
 
 export async function POST(req: Request) {
-  let body: { question?: unknown; docIds?: unknown };
+  let body: { question?: unknown; docIds?: unknown; conversationId?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -47,6 +47,10 @@ export async function POST(req: Request) {
         limit: 6,
         user_id: userId,
         doc_ids: docIds,
+        conversation_id:
+          typeof body.conversationId === "string" && body.conversationId.length > 0
+            ? body.conversationId.slice(0, 64)
+            : null,
       }),
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });

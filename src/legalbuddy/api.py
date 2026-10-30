@@ -32,6 +32,7 @@ load_dotenv()
 from legalbuddy import chat as chat_mod  # noqa: E402
 from legalbuddy.store import COLLECTION, make_client  # noqa: E402
 
+logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 log = logging.getLogger("legalbuddy.api")
 
 Language = Literal["english", "bengali"]
@@ -55,6 +56,9 @@ class ChatRequest(BaseModel):
     # session user; retrieval filters both server-side).
     user_id: str | None = Field(default=None, max_length=64)
     doc_ids: list[str] = Field(default_factory=list, max_length=10)
+    # Active conversation (Neon conversations.id): loads past turns from the
+    # Postgres memory store for follow-ups and records the finished turn.
+    conversation_id: str | None = Field(default=None, max_length=64)
 
 
 class CitationOut(BaseModel):
@@ -104,7 +108,8 @@ def post_chat(req: ChatRequest) -> ChatResponse:
     try:
         ans = chat_mod.answer(req.question, language=req.language,
                               act_year=req.act_year, limit=req.limit,
-                              user_id=req.user_id, doc_ids=req.doc_ids)
+                              user_id=req.user_id, doc_ids=req.doc_ids,
+                              conversation_id=req.conversation_id)
     except Exception:  # retrieval or generation failure -> 502, not 500
         # Never leak internals (tracebacks, hostnames, SDK errors) to callers;
         # the full traceback stays in the server log.
@@ -296,7 +301,8 @@ def post_chat_stream(req: ChatRequest):
         try:
             gen = chat_mod.stream_answer(req.question, language=req.language,
                                          act_year=req.act_year, limit=req.limit,
-                                         user_id=req.user_id, doc_ids=req.doc_ids)
+                                         user_id=req.user_id, doc_ids=req.doc_ids,
+                                         conversation_id=req.conversation_id)
             for kind, val in gen:
                 if kind == "meta":
                     yield _sse("meta", ChatResponse(

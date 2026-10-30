@@ -41,6 +41,8 @@ export interface StreamOptions {
   signal?: AbortSignal;
   /** User-document ids attached to this question (isolated server-side). */
   docIds?: string[];
+  /** Active conversation: loads past turns for follow-ups, records this one. */
+  conversationId?: string;
 }
 
 const DEFAULT_GRACE_MS = 150_000;
@@ -69,7 +71,11 @@ export async function* streamChat(
     res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, docIds: opts.docIds ?? [] }),
+      body: JSON.stringify({
+        question,
+        docIds: opts.docIds ?? [],
+        conversationId: opts.conversationId ?? null,
+      }),
       signal: opts.signal,
     });
   } catch {
