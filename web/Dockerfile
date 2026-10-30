@@ -1,12 +1,8 @@
-# LegalBuddy web — Next.js standalone build.
-FROM node:24-alpine AS deps
+# LegalBuddy web — Next.js standalone build (2 stages: Small-container limit).
+FROM node:24-alpine AS builder
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
-
-FROM node:24-alpine AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
