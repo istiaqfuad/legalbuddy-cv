@@ -29,6 +29,31 @@ live in a **separate collection** that is never merged with the curated
 statute index, and every filter value is built server-side from the
 session — the browser never supplies a user id.
 
+## Tiered enrichment: tables and scanned pages
+
+Plain extraction under-indexes exactly the documents lawyers care about:
+pypdf merges table cells into running text, and scanned/image pages carry
+no text at all. Uploads therefore go through tiers, cheapest first:
+
+1. **Text layer (free).** pypdf per page, as before.
+2. **Tables (free).** pdfplumber (MIT) extracts tables per page, rendered
+   as Markdown and appended after that page's text ("Tables on this
+   page:"). Chunks carrying tables are marked `origin: table`.
+3. **Vision (bounded tokens).** Pages with under 50 extractable characters
+   are rendered to PNG with pypdfium2 (Apache-2.0 binding to BSD-licensed
+   PDFium — no AGPL/GPL exposure, unlike PyMuPDF/poppler) and transcribed
+   by Muse Spark Open itself (`image_url` data URLs, up to 8 pages per
+   call — the Baseten vision cap; Spark accepts no PDF input directly).
+   Transcriptions replace the thin text, and headers say "(visually
+   read)" so citations stay honest. Capped at 20 vision pages per upload
+   to bound token spend; everything else about retrieval is unchanged.
+   Both tiers are best-effort: failures log server-side and the text
+   layer still indexes.
+
+Verified: 69 pytest pass (table rendering, page merge, vision marking,
+PNG rendering, batched transcription with a mocked client); live Spark
+transcription of a generated image returned the exact wording first try.
+
 ## Parsing choices (researched)
 
 - **PDF → pypdf.** Fast, BSD-licensed, good on text PDFs (leases, FIRs,
@@ -142,3 +167,7 @@ cleanup — metadata deletion is authoritative).
   the natural next quality step.
 - `user-documents` lives on Qdrant Cloud free tier; watch collection
   count/size if uploads grow.
+- History sidebar has a title search box (client-side over the loaded
+  50) and the chat top bar downloads the active conversation as Markdown
+  (`## You` / `## LegalBuddy` turns plus a Sources section resolving
+  `[n]`/`[Dn]` the way the sidebar does).
