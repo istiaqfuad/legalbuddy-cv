@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { FRIENDLY_ERROR, SUGGESTIONS } from "@/lib/chat-copy";
+import { FRIENDLY_ERROR, SUGGESTIONS, conversationToMarkdown } from "@/lib/chat-copy";
 import { useChatStore } from "@/stores/chat-store";
 import AnswerMarkdown from "./AnswerMarkdown";
 import HistorySidebar from "./HistorySidebar";
@@ -29,6 +29,8 @@ export default function Chat() {
   const documents = useChatStore((s) => s.documents);
   const uploading = useChatStore((s) => s.uploading);
   const uploadError = useChatStore((s) => s.uploadError);
+  const activeId = useChatStore((s) => s.activeId);
+  const conversations = useChatStore((s) => s.conversations);
   const refreshDocuments = useChatStore((s) => s.refreshDocuments);
   const uploadDocument = useChatStore((s) => s.uploadDocument);
   const attachDocument = useChatStore((s) => s.attachDocument);
@@ -67,6 +69,22 @@ export default function Chat() {
     void send(q);
   }
 
+  function exportChat() {
+    if (messages.length === 0) return;
+    const title =
+      conversations.find((c) => c.id === activeId)?.title ?? "LegalBuddy chat";
+    const md = conversationToMarkdown(messages, title);
+    const blob = new Blob([md], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `legalbuddy-${new Date().toISOString().slice(0, 10)}.md`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+
   async function copyText(text: string, index: number) {
     try {
       await navigator.clipboard.writeText(text);
@@ -100,6 +118,19 @@ export default function Chat() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
               <rect x="3" y="4" width="18" height="16" rx="2" />
               <path d="M9 4v16" />
+            </svg>
+          </button>
+          <button
+            onClick={exportChat}
+            disabled={pending || messages.length === 0}
+            className="rounded-md p-2 text-stone-400 transition-colors hover:bg-stone-800/60 hover:text-stone-100 disabled:opacity-40"
+            title="Download this chat as Markdown"
+            aria-label="Download this chat as Markdown"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <path d="m7 10 5 5 5-5" />
+              <path d="M12 15V3" />
             </svg>
           </button>
           <button

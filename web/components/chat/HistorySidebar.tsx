@@ -21,6 +21,11 @@ export default function HistorySidebar() {
 
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [query, setQuery] = useState("");
+
+  const visible = query.trim()
+    ? conversations.filter((c) => c.title.toLowerCase().includes(query.trim().toLowerCase()))
+    : conversations;
 
   useEffect(() => {
     void refreshConversations();
@@ -52,18 +57,29 @@ export default function HistorySidebar() {
           New chat
         </button>
       </div>
+      <div className="px-3 pb-2">
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search chats…"
+          aria-label="Search conversations"
+          className="w-full rounded-md border border-stone-700/80 bg-stone-900/60 px-2.5 py-1.5 text-xs text-stone-200 placeholder:text-stone-500 focus:border-gold focus:ring-1 focus:ring-gold focus:outline-none"
+        />
+      </div>
       <p className="px-4 pb-1 text-[11px] font-medium tracking-wide text-stone-500 uppercase">
         Recent
       </p>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
         {historyLoading && conversations.length === 0 ? (
           <p className="px-2 py-2 text-xs text-stone-500">Loading chats…</p>
-        ) : conversations.length === 0 ? (
+        ) : visible.length === 0 ? (
           <p className="px-2 py-2 text-xs leading-relaxed text-stone-500">
-            Nothing saved yet. Your chats will appear here.
+            {conversations.length === 0
+              ? "Nothing saved yet. Your chats will appear here."
+              : "No chats match that search."}
           </p>
         ) : (
-          conversations.map((c) => {
+          visible.map((c) => {
             const active = c.id === activeId;
             return (
               <div
