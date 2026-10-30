@@ -1,7 +1,7 @@
-# Tag-gated release: push a v* tag -> tests run -> GitHub Release is
-# created only if everything is green -> Northflank deploys the release.
-# Plain pushes to main build nothing (Northflank CI is disabled on purpose
-# to save build minutes). Requires-python and tool versions mirror CI below.
+# Tag-gated release: push a v* tag -> backend + frontend tests run ->
+# deploy-api and deploy-web branches fast-forward to the tag -> SnapDeploy
+# rebuilds exactly one container per branch. Plain pushes to main deploy
+# nothing, and each release costs one deploy unit per container.
 name: release
 
 on:
@@ -10,7 +10,7 @@ on:
       - 'v*'
 
 permissions:
-  contents: write # needed to create the GitHub Release on green builds
+  contents: write # needed to fast-forward the deploy branches on green builds
 
 jobs:
   backend:
@@ -40,11 +40,13 @@ jobs:
       - run: npx --no-install tsc --noEmit
       - run: npm run lint
 
-  publish-release:
+  rollout:
     needs: [backend, frontend]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          fetch-depth: 0
+      # HEAD is the tag (detached). Plain fast-forward push: fails loudly
+      # instead of overwriting if a deploy branch ever moves unexpectedly.
+      - run: git push origin "HEAD:refs/heads/deploy-api" "HEAD:refs/heads/deploy-web"
