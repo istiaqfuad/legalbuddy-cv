@@ -62,8 +62,14 @@ export const authOptions: NextAuthOptions = {
       }
       return true;
     },
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       if (user?.id) token.uid = user.id;
+      // Name edits go through `useSession().update()`: fold the new name
+      // into the token so the header reflects it without re-login.
+      if (trigger === "update") {
+        const name = (session as { name?: unknown } | null)?.name;
+        if (typeof name === "string" && name.trim()) token.name = name.trim().slice(0, 60);
+      }
       return token;
     },
     async session({ session, token }) {
