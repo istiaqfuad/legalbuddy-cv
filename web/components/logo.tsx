@@ -41,7 +41,7 @@ export default function Logo({
   if (!badge) return mark;
   return (
     <span
-      className="inline-flex items-center justify-center rounded-xl bg-[#0C0A09]"
+      className="inline-flex items-center justify-center rounded-xl bg-stone-950"
       style={{ width: size, height: size }}
     >
       <span style={{ transform: "scale(0.82)" }}>{mark}</span>

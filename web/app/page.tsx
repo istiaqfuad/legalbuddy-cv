@@ -122,7 +122,7 @@ export default function Landing() {
               </Link>
               <Link
                 href="#how"
-                className="rounded-md border border-stone-700 px-5 py-2.5 text-sm font-medium text-stone-200 transition-colors hover:border-stone-500 hover:text-white"
+                className="rounded-md border border-stone-700 px-5 py-2.5 text-sm font-medium text-stone-200 transition-colors hover:border-stone-500 hover:text-stone-100"
               >
                 See how it works
               </Link>

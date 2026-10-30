@@ -2,6 +2,7 @@ import Link from "next/link";
 import AuthButton from "./auth-button";
 import Logo from "./logo";
 import OpenAppLink from "./open-app-link";
+import ThemeToggle from "./theme-toggle";
 
 const NAV = [
   { href: "/#how", label: "How it works" },
@@ -25,8 +26,9 @@ export default function SiteHeader() {
             </Link>
           ))}
         </nav>
-        <div className="ml-auto flex items-center gap-2 md:ml-6 md:gap-3">
+        <div className="ml-auto flex items-center gap-1.5 md:ml-6 md:gap-2">
           <OpenAppLink />
+          <ThemeToggle />
           <AuthButton />
         </div>
       </div>

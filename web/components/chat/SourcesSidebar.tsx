@@ -86,7 +86,7 @@ export default function SourcesSidebar() {
       />
       <aside
         aria-label="Cited sections"
-        className="fixed inset-y-0 right-0 z-40 flex w-80 max-w-[85vw] flex-col overflow-y-auto border-l border-stone-800 bg-[#101010] px-4 py-4 motion-safe:animate-[slide-in-right_0.25s_ease-out]"
+        className="fixed inset-y-0 right-0 z-40 flex w-80 max-w-[85vw] flex-col overflow-y-auto border-l border-stone-800 bg-stone-950 px-4 py-4 motion-safe:animate-[slide-in-right_0.25s_ease-out]"
       >
         {header}
         {cards}

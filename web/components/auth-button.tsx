@@ -103,7 +103,7 @@ export default function AuthButton() {
         )}
       </button>
       {menuOpen ? (
-        <div className="absolute top-10 right-0 z-40 w-64 rounded-lg border border-stone-700/80 bg-[#141210] p-2 shadow-xl shadow-black/50">
+        <div className="absolute top-10 right-0 z-40 w-64 rounded-lg border border-stone-700/80 bg-stone-950 p-2 shadow-xl shadow-black/50">
           <p className="truncate px-2 pt-1 text-xs text-stone-500">{session.user.email}</p>
           {editing ? (
             <form onSubmit={saveName} className="mt-2 space-y-2 px-1 pb-1">
