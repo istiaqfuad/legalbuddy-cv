@@ -105,6 +105,81 @@ def test_parse_failures_are_user_safe():
         docs_mod.parse_document("empty.txt", b"   \n  ")
 
 
+def test_textless_page_detection():
+    segs = [("plenty of text here " * 10, 1), ("  \n ", 2), ("tiny", 3)]
+    assert docs_mod.textless_page_numbers(segs) == [2, 3]
+
+
+def test_tables_to_markdown():
+    table = [["Name", "Fee"], ["Filing", "500"], ["", None]]
+    md = docs_mod.tables_to_markdown(table)
+    assert md.splitlines()[0] == "| Name | Fee |"
+    assert "| Filing | 500 |" in md
+    assert docs_mod.tables_to_markdown([[], []]) == ""
+    assert docs_mod.tables_to_markdown([["a", "b", "c"], ["1"]]).count("|") == 12
+
+
+def test_tables_merge_into_page_chunks():
+    segs = [("Some intro text here.", 1)]
+    tables = {1: "| A | B |\n| --- | --- |\n| 1 | 2 |"}
+    chunks = docs_mod.chunk_document("d", "u", "f.pdf", "application/pdf",
+                                     segs, tables=tables)
+    assert len(chunks) == 1
+    assert "Tables on this page:" in chunks[0].text
+    assert "| A | B |" in chunks[0].text
+    assert chunks[0].origin == "table"
+
+
+def test_vision_texts_replace_thin_pages():
+    segs = [("plenty of text here " * 10, 1), ("x", 2)]
+    vision = {2: "Transcribed scan content about bail."}
+    chunks = docs_mod.chunk_document("d", "u", "scan.pdf", "application/pdf",
+                                     segs, vision_texts=vision)
+    by_page = {c.page: c for c in chunks}
+    assert "bail" in by_page[2].text
+    assert by_page[2].origin == "vision"
+    assert "(visually read)" in by_page[2].text
+    assert by_page[1].origin == "text"
+
+
+def test_render_pages_produces_png():
+    data = _mini_pdf(["Hello render"])
+    out = docs_mod.render_pages(data, [1, 99])
+    assert list(out) == [1]
+    assert out[1][:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_transcribe_images_batches(monkeypatch):
+    seen = {}
+
+    class FakeMsg:
+        content = "Page one text\n---\nPage two text"
+
+    class FakeChoices:
+        def __init__(self):
+            self.message = FakeMsg()
+
+    class FakeResp:
+        choices = [FakeChoices()]
+
+    class FakeCompletions:
+        def create(self, model, messages):
+            seen["images"] = sum(1 for p in messages[0]["content"]
+                                 if p.get("type") == "image_url")
+            assert messages[0]["content"][0]["text"].startswith("Transcribe")
+            return FakeResp()
+
+    class FakeClient:
+        def __init__(self, base_url, api_key):
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+
+    monkeypatch.setitem(__import__("os").environ, "BASETEN_API_KEY", "test")
+    monkeypatch.setattr("openai.OpenAI", FakeClient)
+    out = docs_mod.transcribe_images([b"img1", b"img2"])
+    assert seen["images"] == 2
+    assert out == ["Page one text", "Page two text"]
+
+
 def test_chunking_splits_long_docs_and_caps():
     long_text = "\n\n".join(f"Paragraph {i} " + "word " * 300 for i in range(30))
     chunks = docs_mod.chunk_document("d3", "u9", "big.txt", "text/plain",

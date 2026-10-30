@@ -177,7 +177,24 @@ async def upload_document(user_id: str | None = Query(default=None, max_length=6
     ext = os.path.splitext(filename)[1].lower()
     mime = docs_mod.EXTENSION_MIME.get(ext, "application/octet-stream")
     doc_id = docs_mod.new_doc_id()
-    chunks = docs_mod.chunk_document(doc_id, user, filename, mime, segments)
+    # Tiered enrichment for PDFs: explicit tables first (free), then VLM
+    # transcription for textless pages only (bounded token spend). Both
+    # are best-effort — the text layer always indexes regardless.
+    tables: dict[int, str] = {}
+    vision_texts: dict[int, str] = {}
+    if ext == ".pdf":
+        tables = docs_mod.extract_page_tables(data)
+        needy = docs_mod.textless_page_numbers(segments)[:docs_mod.MAX_VISION_PAGES]
+        if needy:
+            try:
+                rendered = docs_mod.render_pages(data, needy)
+                order = [p for p in needy if p in rendered]
+                texts = docs_mod.transcribe_images([rendered[p] for p in order])
+                vision_texts = dict(zip(order, texts))
+            except Exception:
+                log.exception("vision transcription failed; indexing text layer")
+    chunks = docs_mod.chunk_document(doc_id, user, filename, mime, segments,
+                                     tables=tables, vision_texts=vision_texts)
     if not chunks:
         raise HTTPException(status_code=400, detail="No readable text found.")
     try:

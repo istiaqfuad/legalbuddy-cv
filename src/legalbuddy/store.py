@@ -170,6 +170,7 @@ def doc_chunk_to_payload(chunk) -> dict:
         "page": chunk.page,
         "chunk_index": chunk.chunk_index,
         "chunk_count": chunk.chunk_count,
+        "origin": getattr(chunk, "origin", "text"),
     }
 
 
