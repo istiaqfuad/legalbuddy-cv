@@ -10,9 +10,35 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT, -- NULL for OAuth-only accounts
   provider TEXT NOT NULL DEFAULT 'credentials',
   provider_account_id TEXT,
+  -- Account type picked at signup (individual/business) and role.
+  -- onboarded is FALSE until the signup steps or post-OAuth onboarding finish.
+  account_type TEXT NOT NULL DEFAULT 'individual' CHECK (account_type IN ('individual', 'business')),
+  company_name TEXT,
+  role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'lawyer')),
+  lawyer_status TEXT NOT NULL DEFAULT 'none' CHECK (lawyer_status IN ('none', 'pending', 'verified', 'rejected')),
+  onboarded BOOLEAN NOT NULL DEFAULT TRUE,
+  -- Billing (Stripe is the source of truth; these columns are a cache
+  -- written only from verified webhook events, never from the client).
+  stripe_customer_id TEXT UNIQUE,
+  plan TEXT NOT NULL DEFAULT 'lite' CHECK (plan IN ('lite', 'professional', 'business')),
+  subscription_status TEXT,
+  stripe_subscription_id TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Migration for databases created before billing/lawyer columns existed.
+-- IF NOT EXISTS keeps this safe to re-run on every deploy.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS account_type TEXT NOT NULL DEFAULT 'individual' CHECK (account_type IN ('individual', 'business'));
+ALTER TABLE users ADD COLUMN IF NOT EXISTS company_name TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'lawyer'));
+ALTER TABLE users ADD COLUMN IF NOT EXISTS lawyer_status TEXT NOT NULL DEFAULT 'none' CHECK (lawyer_status IN ('none', 'pending', 'verified', 'rejected'));
+ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarded BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT UNIQUE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'lite' CHECK (plan IN ('lite', 'professional', 'business'));
+ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_status TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;
+CREATE INDEX IF NOT EXISTS users_stripe_customer_idx ON users(stripe_customer_id);
 
 CREATE TABLE IF NOT EXISTS conversations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -50,6 +76,26 @@ CREATE TABLE IF NOT EXISTS documents (
 );
 CREATE INDEX IF NOT EXISTS documents_user_idx
   ON documents(user_id, created_at DESC);
+
+-- Lawyer verification requests. The Sanad scan lives in object storage
+-- (private bucket); only its key is stored here. ocr_* columns record the
+-- automated cross-check; status flips to verified automatically on a
+-- name+number match, otherwise a human reviews.
+CREATE TABLE IF NOT EXISTS lawyer_verifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  full_name TEXT NOT NULL,
+  sanad_no TEXT NOT NULL,
+  enrollment_date DATE,
+  bar_association TEXT NOT NULL,
+  object_key TEXT NOT NULL,
+  ocr_text TEXT,
+  ocr_match BOOLEAN,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'verified', 'rejected')),
+  reviewer_note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 -- Documents attached to a conversation: scoping retrieval to the
 -- conversation's own files.
