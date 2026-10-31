@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
   -- onboarded is FALSE until the signup steps or post-OAuth onboarding finish.
   account_type TEXT NOT NULL DEFAULT 'individual' CHECK (account_type IN ('individual', 'business')),
   company_name TEXT,
-  role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'lawyer')),
+  role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'lawyer', 'admin')),
   lawyer_status TEXT NOT NULL DEFAULT 'none' CHECK (lawyer_status IN ('none', 'pending', 'verified', 'rejected')),
   onboarded BOOLEAN NOT NULL DEFAULT TRUE,
   -- Billing (Stripe is the source of truth; these columns are a cache
@@ -31,7 +31,12 @@ CREATE TABLE IF NOT EXISTS users (
 -- IF NOT EXISTS keeps this safe to re-run on every deploy.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS account_type TEXT NOT NULL DEFAULT 'individual' CHECK (account_type IN ('individual', 'business'));
 ALTER TABLE users ADD COLUMN IF NOT EXISTS company_name TEXT;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'lawyer'));
+ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'lawyer', 'admin'));
+-- Admin role (reserved): no signup form or API accepts it. Until the admin
+-- dashboard exists, grant it manually: UPDATE users SET role = 'admin' WHERE email = '...';
+-- Existing databases carry the old two-value CHECK under the same name.
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('user', 'lawyer', 'admin'));
 ALTER TABLE users ADD COLUMN IF NOT EXISTS lawyer_status TEXT NOT NULL DEFAULT 'none' CHECK (lawyer_status IN ('none', 'pending', 'verified', 'rejected'));
 ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarded BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT UNIQUE;

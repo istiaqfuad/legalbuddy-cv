@@ -21,6 +21,8 @@ export async function POST(req: Request) {
     accountType === "business" && typeof body.companyName === "string" && body.companyName.trim()
       ? body.companyName.trim().slice(0, 120)
       : null;
+  // Allowlist: 'admin' is never assignable here (reserved for the future
+  // admin dashboard; granted manually in the database until then).
   const role = body.role === "lawyer" ? "lawyer" : "user";
   const plan = body.plan === "professional" || body.plan === "business" ? body.plan : "lite";
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {

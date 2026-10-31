@@ -72,7 +72,10 @@ Business (adds company name), or Lawyer (verification after signup).
 Google signups finish the same steps on `/onboarding`; `/post-login`
 routes by `onboarded` and verification state. Lawyers subscribe to the
 same Professional plan as everyone else; enrollment proves who they are,
-the subscription pays for the service.
+the subscription pays for the service. The `role` enum also includes
+`admin`, but no signup form or API accepts it (both allowlist
+user/lawyer only): until the admin dashboard exists, grant it manually
+with `UPDATE users SET role = 'admin' WHERE email = '...';`.
 
 ## Tax note
 

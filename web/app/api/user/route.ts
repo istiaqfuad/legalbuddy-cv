@@ -35,6 +35,8 @@ export async function PATCH(req: Request) {
     sets.push(`company_name = $${sets.length + 1}`);
     vals.push(body.companyName.trim().slice(0, 120) || null);
   }
+  // Allowlist: 'admin' is never assignable here (reserved for the future
+  // admin dashboard; granted manually in the database until then).
   if (body?.role === "lawyer" || body?.role === "user") {
     sets.push(`role = $${sets.length + 1}`);
     vals.push(body.role);
