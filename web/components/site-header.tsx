@@ -8,7 +8,7 @@ import Wordmark from "./wordmark";
 const NAV = [
   { href: "/#how", label: "How it works" },
   { href: "/#features", label: "Why trust it" },
-  { href: "/#pricing", label: "Pricing" },
+  { href: "/pricing", label: "Pricing" },
   { href: "/#faq", label: "FAQ" },
 ];
 

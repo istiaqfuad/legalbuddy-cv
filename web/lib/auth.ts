@@ -45,20 +45,31 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    // First Google sign-in creates the user row; later ones refresh it.
+    // First Google sign-in creates the user row (marked not onboarded, so
+    // /post-login routes to the account-type and plan steps); later ones
+    // just refresh it.
     async signIn({ user, account }) {
       if (account?.provider === "google" && user.email) {
-        const rows = (await getDb().query(
-          `INSERT INTO users (email, name, image, provider, provider_account_id)
-           VALUES ($1, $2, $3, 'google', $4)
-           ON CONFLICT (email) DO UPDATE SET
-             name = EXCLUDED.name,
-             image = EXCLUDED.image,
-             provider_account_id = EXCLUDED.provider_account_id
-           RETURNING id`,
-          [user.email.toLowerCase(), user.name ?? null, user.image ?? null, account.providerAccountId],
-        )) as Array<{ id: string }>;
-        user.id = rows[0].id;
+        const email = user.email.toLowerCase();
+        const existing = (await getDb().query("SELECT id FROM users WHERE email = $1", [
+          email,
+        ])) as Array<{ id: string }>;
+        if (existing[0]) {
+          await getDb().query(
+            `UPDATE users SET name = $1, image = $2, provider_account_id = $3,
+                              updated_at = now() WHERE id = $4`,
+            [user.name ?? null, user.image ?? null, account.providerAccountId, existing[0].id],
+          );
+          user.id = existing[0].id;
+        } else {
+          const rows = (await getDb().query(
+            `INSERT INTO users (email, name, image, provider, provider_account_id, onboarded)
+             VALUES ($1, $2, $3, 'google', $4, FALSE)
+             RETURNING id`,
+            [email, user.name ?? null, user.image ?? null, account.providerAccountId],
+          )) as Array<{ id: string }>;
+          user.id = rows[0].id;
+        }
       }
       return true;
     },
