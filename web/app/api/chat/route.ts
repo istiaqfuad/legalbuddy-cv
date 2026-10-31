@@ -1,5 +1,7 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { getDb } from "@/lib/db";
+import { subscriptionActive } from "@/lib/stripe";
 
 /** Server-side proxy: browser -> Next route -> Python API.
  *
@@ -15,6 +17,34 @@ import { authOptions } from "@/lib/auth";
 
 const UPSTREAM_TIMEOUT_MS = 180_000;
 const GENERIC_ERROR = "The assistant is unavailable right now. Please try again in a moment.";
+
+/** Lite plan: capped assistant answers per UTC day. Paid plans with an
+ * active or trialing subscription are unlimited; anything else (past
+ * due, canceled, disputed) falls back to Lite. Quota failures stay
+ * permissive: a broken count must not lock users out. */
+async function withinQuota(userId: string): Promise<boolean> {
+  try {
+    const rows = (await getDb().query(
+      "SELECT plan, subscription_status FROM users WHERE id = $1",
+      [userId],
+    )) as Array<{ plan: string; subscription_status: string | null }>;
+    const u = rows[0];
+    if (!u) return true;
+    if (u.plan !== "lite" && subscriptionActive(u.subscription_status)) return true;
+    const limit = Number(process.env.LITE_DAILY_MESSAGES ?? "20") || 20;
+    const used = (await getDb().query(
+      `SELECT COUNT(*)::int AS n FROM messages m
+       JOIN conversations c ON c.id = m.conversation_id
+       WHERE c.user_id = $1 AND m.role = 'assistant'
+         AND m.created_at >= date_trunc('day', now())`,
+      [userId],
+    )) as Array<{ n: number }>;
+    return (used[0]?.n ?? 0) < limit;
+  } catch (err) {
+    console.error(`quota check failed: ${err instanceof Error ? err.message : err}`);
+    return true;
+  }
+}
 
 export async function POST(req: Request) {
   let body: { question?: unknown; docIds?: unknown; conversationId?: unknown };
@@ -33,6 +63,15 @@ export async function POST(req: Request) {
   // never supplies a user id of its own.
   const session = await getServerSession(authOptions);
   const userId = session?.user?.id ?? null;
+  if (session?.user) {
+    const allowed = await withinQuota(session.user.id);
+    if (!allowed) {
+      return Response.json(
+        { detail: "You have reached today's free answer limit. Upgrade for unlimited answers." },
+        { status: 402 },
+      );
+    }
+  }
 
   const base = process.env.API_INTERNAL_URL ?? "http://localhost:8000";
   try {

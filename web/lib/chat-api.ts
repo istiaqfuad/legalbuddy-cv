@@ -81,7 +81,12 @@ export async function* streamChat(
   } catch {
     throw new ChatStreamError("answer service unreachable");
   }
-  if (!res.ok || !res.body) throw new ChatStreamError(`bad upstream: ${res.status}`);
+  if (!res.ok || !res.body) {
+    // 402 is the free-plan quota: surfaced as its own banner with an
+    // upgrade path, not the generic failure message.
+    if (res.status === 402) throw new ChatStreamError("quota-exceeded");
+    throw new ChatStreamError(`bad upstream: ${res.status}`);
+  }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";

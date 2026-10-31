@@ -18,6 +18,7 @@ export default function Chat() {
   const messages = useChatStore((s) => s.messages);
   const pending = useChatStore((s) => s.pending);
   const failed = useChatStore((s) => s.failed);
+  const quotaExceeded = useChatStore((s) => s.quotaExceeded);
   const send = useChatStore((s) => s.send);
   const stop = useChatStore((s) => s.stop);
   const regenerate = useChatStore((s) => s.regenerate);
@@ -243,7 +244,17 @@ export default function Chat() {
           )}
           {failed ? (
             <div className="rounded-md border border-red-900/60 bg-red-950/40 px-4 py-3 text-sm text-red-200">
-              {FRIENDLY_ERROR}{" "}
+              {quotaExceeded ? (
+                <>
+                  You have reached today&apos;s free answer limit.{" "}
+                  <a href="/pricing" className="font-medium underline">
+                    Upgrade for unlimited answers
+                  </a>
+                  .{" "}
+                </>
+              ) : (
+                <>{FRIENDLY_ERROR} </>
+              )}
               <button onClick={dismissError} className="font-medium underline">
                 Dismiss
               </button>

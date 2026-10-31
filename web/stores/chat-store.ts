@@ -37,6 +37,8 @@ async function saveMessage(
 interface ChatState {
   messages: ChatMessage[];
   pending: boolean;
+  /** Free-plan quota hit on the visible chat: banner links to pricing. */
+  quotaExceeded: boolean;
   /** Per-conversation message buffers; `messages` mirrors the active one. */
   buffers: Record<string, ChatMessage[]>;
   /** Conversations with a live stream right now. */
@@ -181,8 +183,9 @@ export const useChatStore = create<ChatState>()((set, get) => {
           ],
         }));
       }
-    } catch {
+    } catch (err) {
       if (!alive()) return;
+      const quota = err instanceof Error && err.message === "quota-exceeded";
       if (ctrl.signal.aborted) {
         // The user stopped it: keep the partial answer, save what exists,
         // and stay quiet instead of showing the error banner.
@@ -205,7 +208,9 @@ export const useChatStore = create<ChatState>()((set, get) => {
           : msgs;
       });
       // A background failure must not raise the banner on another chat.
-      if (conversationId === get().activeId) set({ failed: true });
+      if (conversationId === get().activeId) {
+        set({ failed: true, ...(quota ? { quotaExceeded: true } : {}) });
+      }
     } finally {
       if (streamControllers[conversationId] === ctrl) {
         delete streamControllers[conversationId];
@@ -226,6 +231,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
   return {
     messages: [],
     pending: false,
+    quotaExceeded: false,
     buffers: {},
     busy: {},
     failed: false,
@@ -342,6 +348,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
         activeId: null,
         pending: false,
         failed: false,
+      quotaExceeded: false,
         sidebarOpen: false,
         sidebarCitations: [],
         expandedRef: null,
@@ -356,6 +363,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
       set({
         activeId: id,
         failed: false,
+      quotaExceeded: false,
         sidebarOpen: false,
         pending: !!get().busy[id],
         ...(buffered ? { messages: buffered } : {}),
@@ -473,7 +481,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
       }
     },
 
-    dismissError: () => set({ failed: false }),
+    dismissError: () => set({ failed: false, quotaExceeded: false }),
 
     toggleSource: (ref) =>
       set((s) => ({ expandedRef: s.expandedRef === ref ? null : ref })),
@@ -545,6 +553,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
       ] as ChatMessage[];
       set((s) => ({
         failed: false,
+      quotaExceeded: false,
         pending: true,
         messages: next,
         buffers: { ...s.buffers, [conversationId]: next },
@@ -578,6 +587,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
       ] as ChatMessage[];
       set((s) => ({
         failed: false,
+      quotaExceeded: false,
         pending: true,
         messages: next,
         buffers: { ...s.buffers, [activeId]: next },
