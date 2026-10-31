@@ -64,13 +64,8 @@ export default function VerifyLawyerPage() {
         setError(typeof data?.detail === "string" ? data.detail : "Submission failed. Please try again.");
         return;
       }
-      if (data?.status === "verified") {
-        setDone("Verified. Your enrollment name and number matched the Sanad scan.");
-        setExisting({ status: "verified", note: null });
-      } else {
-        setDone("Received. The scan needs a human look, and your account unlocks as soon as it clears.");
-        setExisting({ status: "pending", note: null });
-      }
+      setDone("Received. A reviewer checks the Sanad against the Bar Council roll, and your account unlocks as soon as it clears.");
+      setExisting({ status: "pending", note: null });
     } finally {
       setBusy(false);
     }
@@ -172,7 +167,7 @@ export default function VerifyLawyerPage() {
                   disabled={busy || (!file && !existing)}
                   className="w-full rounded-md bg-gold px-4 py-2 text-sm font-semibold text-ink transition-all hover:bg-gold-light active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {busy ? "Checking the scan…" : "Submit for verification"}
+                  {busy ? "Submitting…" : "Submit for verification"}
                 </button>
               </form>
             )}

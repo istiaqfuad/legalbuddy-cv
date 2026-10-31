@@ -5,48 +5,10 @@ import { uploadSanad } from "@/lib/storage";
 
 const GENERIC_ERROR = "Could not submit verification. Please try again.";
 
-/** Normalize for matching: lowercase alphanumerics only. */
-function squash(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
-/** True when the submitted name and Sanad number both appear in the scan:
- * every digit group of the number must occur, and at least half of the
- * significant name tokens must occur. */
-export function matchesScan(
-  fullName: string,
-  sanadNo: string,
-  ocrText: string,
-): boolean {
-  const ocr = squash(ocrText);
-  if (!ocr) return false;
-  const digits = sanadNo.replace(/[^0-9]/g, "");
-  if (!digits || digits.length < 3 || !ocr.includes(digits)) return false;
-  const tokens = fullName
-    .toLowerCase()
-    .split(/[^a-z]+/)
-    .filter((t) => t.length > 2);
-  if (tokens.length === 0) return false;
-  const hits = tokens.filter((t) => ocr.includes(t)).length;
-  return hits / tokens.length >= 0.5;
-}
-
-async function transcribe(data: Buffer, filename: string): Promise<string> {
-  const base = process.env.API_INTERNAL_URL ?? "http://localhost:8000";
-  const form = new FormData();
-  form.append("file", new Blob([new Uint8Array(data)], { type: "application/octet-stream" }), filename);
-  const res = await fetch(`${base}/api/ocr`, {
-    method: "POST",
-    body: form,
-    signal: AbortSignal.timeout(180_000),
-  });
-  if (!res.ok) throw new Error(`ocr upstream: ${res.status}`);
-  const out = (await res.json()) as { text?: unknown };
-  return typeof out.text === "string" ? out.text : "";
-}
-
-/** Submit (or resubmit) lawyer verification: Sanad scan to private object
- * storage, OCR cross-check, auto-verify on a name+number match. */
+/** Submit (or resubmit) lawyer verification: the Sanad scan goes to
+ * private object storage and the request waits for human review.
+ * Automated reading was tried and dropped: the vision model refuses to
+ * transcribe ID documents, so every Sanad needs human eyes. */
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return Response.json({ detail: "Sign in required." }, { status: 401 });
@@ -75,43 +37,53 @@ export async function POST(req: Request) {
   try {
     const bytes = Buffer.from(await file.arrayBuffer());
     const key = await uploadSanad(session.user.id, file.name || "sanad", bytes, file.type);
-    let ocrText = "";
-    try {
-      ocrText = (await transcribe(bytes, file.name || "scan")).slice(0, 8000);
-    } catch (err) {
-      // OCR is enrichment: an unreadable scan goes to manual review.
-      console.error(`sanad ocr failed: ${err instanceof Error ? err.message : err}`);
-    }
-    const match = matchesScan(fullName, sanadNo, ocrText);
-    const status = match ? "verified" : "pending";
     const db = getDb();
     await db.query(
       `INSERT INTO lawyer_verifications (user_id, full_name, sanad_no, enrollment_date,
-                                         bar_association, object_key, ocr_text, ocr_match, status)
-       VALUES ($1, $2, $3, $4::date, $5, $6, $7, $8, $9)
+                                         bar_association, object_key, status)
+       VALUES ($1, $2, $3, $4::date, $5, $6, 'pending')
        ON CONFLICT (user_id) DO UPDATE SET
          full_name = EXCLUDED.full_name, sanad_no = EXCLUDED.sanad_no,
          enrollment_date = EXCLUDED.enrollment_date, bar_association = EXCLUDED.bar_association,
-         object_key = EXCLUDED.object_key, ocr_text = EXCLUDED.ocr_text,
-         ocr_match = EXCLUDED.ocr_match, status = EXCLUDED.status,
+         object_key = EXCLUDED.object_key, status = 'pending',
          reviewer_note = NULL, updated_at = now()`,
-      [session.user.id, fullName, sanadNo, enrollmentDate, barAssociation, key, ocrText || null, match, status],
+      [session.user.id, fullName, sanadNo, enrollmentDate, barAssociation, key],
     );
     await db.query(
-      "UPDATE users SET role = 'lawyer', lawyer_status = $1, updated_at = now() WHERE id = $2",
-      [status, session.user.id],
+      "UPDATE users SET role = 'lawyer', lawyer_status = 'pending', updated_at = now() WHERE id = $1",
+      [session.user.id],
     );
-    return Response.json({ ok: true, status, match });
+    return Response.json({ ok: true, status: "pending" });
   } catch (err) {
     console.error(`verification submit failed: ${err instanceof Error ? err.message : err}`);
     return Response.json({ detail: GENERIC_ERROR }, { status: 502 });
   }
 }
 
-/** Current verification state for the signed-in user. */
-export async function GET() {
+/** Own verification state; admins can pull any user's file for review. */
+export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return Response.json({ detail: "Sign in required." }, { status: 401 });
+  const target = new URL(req.url).searchParams.get("userId");
+  if (target) {
+    if (!isAdmin(session.user.email)) {
+      return Response.json({ detail: "Sign in required." }, { status: 401 });
+    }
+    const rows = (await getDb().query(
+      `SELECT user_id, full_name, sanad_no, enrollment_date, bar_association,
+              object_key, status, reviewer_note, updated_at
+       FROM lawyer_verifications WHERE user_id = $1`,
+      [target],
+    )) as Array<{
+      user_id: string; full_name: string; sanad_no: string; enrollment_date: string | null;
+      bar_association: string; object_key: string; status: string;
+      reviewer_note: string | null; updated_at: string;
+    }>;
+    const v = rows[0];
+    if (!v) return Response.json({ detail: "No verification found." }, { status: 404 });
+    const { sanadUrl } = await import("@/lib/storage");
+    return Response.json({ ...v, sanadUrl: await sanadUrl(v.object_key) });
+  }
   const rows = (await getDb().query(
     `SELECT v.status, v.reviewer_note, v.updated_at, u.lawyer_status, u.role
      FROM users u LEFT JOIN lawyer_verifications v ON v.user_id = u.id

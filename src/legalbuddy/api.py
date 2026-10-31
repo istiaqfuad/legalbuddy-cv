@@ -289,38 +289,6 @@ def delete_document(doc_id: str,
     return {"ok": True}
 
 
-@app.post("/api/ocr")
-async def post_ocr(file: UploadFile = File(...)):
-    """Transcribe one Sanad scan (photo or PDF first page) for verification.
-
-    Internal use: the Next.js lawyer-verification route calls this over the
-    trusted compose network and fuzzy-matches the text itself. Bounded to a
-    single vision call; returns 502 (never the raw error) on failure.
-    """
-    from legalbuddy import documents as docs_mod
-
-    data = await file.read()
-    if not data or len(data) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="File must be 1 byte to 10 MB.")
-    filename = (file.filename or "scan").strip().lower()
-    try:
-        if filename.endswith(".pdf"):
-            rendered = docs_mod.render_pages(data, [1])
-            images = [rendered[1]] if 1 in rendered else []
-        else:
-            images = [data]
-        if not images:
-            raise HTTPException(status_code=400, detail="No readable page found.")
-        texts = docs_mod.transcribe_images(images[:1])
-    except HTTPException:
-        raise
-    except Exception:
-        log.exception("sanad transcription failed")
-        raise HTTPException(status_code=502,
-                            detail="Could not read the scan.") from None
-    return {"text": (texts[0] if texts else "").strip()}
-
-
 @app.post("/api/chat/stream")
 def post_chat_stream(req: ChatRequest):
     """Token-streaming answer as Server-Sent Events.
