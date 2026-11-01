@@ -34,18 +34,33 @@ const TIERS = [
 export default function PricingPage() {
   const [signedIn, setSignedIn] = useState(false);
   const [plan, setPlan] = useState("lite");
+  const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
-    fetch("/api/billing/status")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (!live || !d) return;
-        setSignedIn(true);
-        setPlan(typeof d.plan === "string" ? d.plan : "lite");
-      })
-      .catch(() => {});
+    // Only a finished request settles the buttons: 200 signs in, 401
+    // signs out. A network failure retries, then holds the neutral state
+    // instead of guessing signed-out (which is exactly the flash we are
+    // removing).
+    (async () => {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const r = await fetch("/api/billing/status");
+          if (!live) return;
+          if (r.ok) {
+            const d = await r.json().catch(() => null);
+            setSignedIn(true);
+            setPlan(typeof d?.plan === "string" ? d.plan : "lite");
+          }
+          setLoaded(r.ok || r.status === 401);
+          return;
+        } catch {
+          if (!live) return;
+          await new Promise((res) => setTimeout(res, 1000));
+        }
+      }
+    })();
     return () => {
       live = false;
     };
@@ -109,7 +124,11 @@ export default function PricingPage() {
                     </li>
                   ))}
                 </ul>
-                {current ? (
+                {!loaded ? (
+                  <span className="mt-5 rounded-md border border-stone-800 bg-stone-900/40 px-4 py-2 text-center text-sm text-stone-600 motion-safe:animate-pulse">
+                    …
+                  </span>
+                ) : current ? (
                   <span className="mt-5 rounded-md border border-stone-700 px-4 py-2 text-center text-sm text-stone-400">
                     Current plan
                   </span>
