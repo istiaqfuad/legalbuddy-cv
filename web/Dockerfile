@@ -9,8 +9,11 @@ RUN npm run build
 
 FROM node:24-alpine AS runner
 WORKDIR /app
+# Bind all interfaces: platforms inject internal hostnames via HOST and the
+# standalone server would otherwise bind one the load balancer can't reach.
 ENV NODE_ENV=production \
-    NEXT_TELEMETRY_DISABLED=1
+    NEXT_TELEMETRY_DISABLED=1 \
+    HOSTNAME=0.0.0.0
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
