@@ -10,6 +10,7 @@ import { signOut, useSession } from "next-auth/react";
 export default function AuthButton() {
   const { data: session, status, update } = useSession();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -84,7 +85,13 @@ export default function AuthButton() {
     <div ref={menuRef} className="relative">
       <button
         onClick={() => {
-          if (!menuOpen) setName(session?.user?.name ?? "");
+          if (!menuOpen) {
+            setName(session?.user?.name ?? "");
+            fetch("/api/billing/status")
+              .then((r) => (r.ok ? r.json() : null))
+              .then((d) => setIsAdmin(d?.role === "admin"))
+              .catch(() => {});
+          }
           setMenuOpen((o) => !o);
           setEditing(false);
         }}
@@ -163,6 +170,27 @@ export default function AuthButton() {
                 </svg>
                 Plan and billing
               </Link>
+              {isAdmin ? (
+                <Link
+                  href="/admin"
+                  onClick={() => setMenuOpen(false)}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-stone-300 transition-colors hover:bg-stone-800/70 hover:text-stone-100"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z" />
+                    <path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" />
+                    <path d="M12 2v2" />
+                    <path d="M12 20v2" />
+                    <path d="m4.9 4.9 1.4 1.4" />
+                    <path d="m17.7 17.7 1.4 1.4" />
+                    <path d="M2 12h2" />
+                    <path d="M20 12h2" />
+                    <path d="m6.3 17.7-1.4 1.4" />
+                    <path d="m19.1 4.9-1.4 1.4" />
+                  </svg>
+                  Administration
+                </Link>
+              ) : null}
               <Link
                 href="/verify-lawyer"
                 onClick={() => setMenuOpen(false)}

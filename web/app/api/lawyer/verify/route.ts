@@ -1,5 +1,6 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { isAdminUser } from "@/lib/admin";
 import { getDb } from "@/lib/db";
 import { uploadSanad } from "@/lib/storage";
 
@@ -66,7 +67,7 @@ export async function GET(req: Request) {
   if (!session?.user) return Response.json({ detail: "Sign in required." }, { status: 401 });
   const target = new URL(req.url).searchParams.get("userId");
   if (target) {
-    if (!isAdmin(session.user.email)) {
+    if (!(await isAdminUser(session.user.id, session.user.email))) {
       return Response.json({ detail: "Sign in required." }, { status: 401 });
     }
     const rows = (await getDb().query(
@@ -98,16 +99,10 @@ export async function GET(req: Request) {
   });
 }
 
-function isAdmin(email: string | null | undefined): boolean {
-  if (!email) return false;
-  const list = (process.env.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim().toLowerCase());
-  return list.includes(email.toLowerCase());
-}
-
-/** Manual review: approve or reject a verification (admin emails only). */
+/** Manual review: approve or reject a verification (admins only). */
 export async function PATCH(req: Request) {
   const session = await getServerSession(authOptions);
-  if (!session?.user || !isAdmin(session.user.email)) {
+  if (!session?.user || !(await isAdminUser(session.user.id, session.user.email))) {
     return Response.json({ detail: "Sign in required." }, { status: 401 });
   }
   let body: { userId?: unknown; decision?: unknown; note?: unknown };

@@ -43,6 +43,19 @@ Pay with test card `4242 4242 4242 4242`, any future expiry, any CVC.
 The current `.env` secret belongs to such a listener (test mode); replace
 it with the Dashboard endpoint secret for production.
 
+## Admin dashboard
+
+`/admin` is gated server-side: signed-in users whose `role` is `admin`
+(or a bootstrap `ADMIN_EMAILS` address). Everyone else redirects home,
+and every `/api/admin/*` route enforces the same check. The page shows
+headline counts (people, signups today, waiting reviews, conversations,
+answers, plan and lawyer breakdowns) and the enrollment review queue:
+open a row, inspect the Sanad via its presigned link, then approve or
+reject with a note. The review API (`PATCH /api/lawyer/verify`) uses the
+same gate, so approvals cannot come from anywhere else. Grant the role
+manually until the dashboard can assign it:
+`UPDATE users SET role = 'admin' WHERE email = '...';`.
+
 ## Lawyer verification
 
 Bangladesh has no public, machine-checkable advocate roll: the Bar
