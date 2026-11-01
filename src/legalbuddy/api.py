@@ -289,6 +289,20 @@ def delete_document(doc_id: str,
     return {"ok": True}
 
 
+class EmbedRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+
+
+@app.post("/api/profile-embed")
+def post_profile_embed(req: EmbedRequest):
+    """Single Voyage embedding for a lawyer profile text (internal use:
+    the Next.js profile route stores it for cosine matching)."""
+    from legalbuddy.embedder import VoyageDense
+
+    vec = VoyageDense().embed([req.text], input_type="document")[0]
+    return {"embedding": vec}
+
+
 class MatchRequest(BaseModel):
     user_id: str = Field(max_length=64)
     limit: int = Field(default=3, ge=1, le=10)
