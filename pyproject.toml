@@ -10,7 +10,6 @@ dependencies = [
     "langchain-postgres>=0.0.19",
     "openai>=1.50.0",
     "pdfplumber>=0.11.10",
-    "pillow>=13.0.0",
     "psycopg[binary]>=3.3.6",
     "pypdf>=6.21.4",
     "pypdfium2>=5.14.0",

@@ -238,7 +238,6 @@ function MyPractice({ onSaved }: { onSaved: () => void }) {
 /** Suggested lawyers from your history, plus the browsable directory.
  * Lawyers see their own practice editor on the same page. */
 export default function LawyersPage() {
-  const router = useRouter();
   const [signedIn, setSignedIn] = useState(false);
   const [isLawyer, setIsLawyer] = useState(false);
   const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null);

@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import SiteHeader from "@/components/site-header";
-import Logo from "@/components/logo";
 
 const TIERS = [
   {
