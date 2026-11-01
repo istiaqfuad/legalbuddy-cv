@@ -289,6 +289,57 @@ def delete_document(doc_id: str,
     return {"ok": True}
 
 
+class MatchRequest(BaseModel):
+    user_id: str = Field(max_length=64)
+    limit: int = Field(default=3, ge=1, le=10)
+
+
+@app.post("/api/match-lawyers")
+def post_match_lawyers(req: MatchRequest):
+    """Recommend verified lawyers from the user's matter history.
+
+    ``user_id`` comes from the Next.js session (trusted internal network).
+    Runs classification + embedding + scoring; returns ranked lawyers with
+    templated reasons, or a directory fallback when nothing matches.
+    """
+    from legalbuddy import matcher as matcher_mod
+    from legalbuddy.chat import CHAT_MODEL, _client
+    from legalbuddy.embedder import VoyageDense
+
+    history = matcher_mod.fetch_history(req.user_id)
+    if not history:
+        return {"need": None, "results": [], "fallback": "directory"}
+    numbered = "\n".join(f"{i + 1}. {h['content'][:500]}" for i, h in enumerate(history))
+    need = matcher_mod.classify_matters(numbered, _client(), CHAT_MODEL)
+    if not need.get("dominant"):
+        return {"need": need, "results": [], "fallback": "directory"}
+    query_text = need.get("summary") or numbered[:2000]
+    need["matter_embedding"] = VoyageDense().embed([query_text], input_type="query")[0]
+    need["bangla"] = bool(need.get("bangla")) or bool(
+        matcher_mod.BN_PATTERN.search(numbered))
+    ranked = matcher_mod.score_lawyers(need, matcher_mod.fetch_candidates())
+    results = []
+    for r in ranked[:req.limit]:
+        results.append({
+            "user_id": str(r["user_id"]),
+            "display_name": r.get("display_name"),
+            "practice_areas": r.get("practice_areas") or [],
+            "languages": r.get("languages") or [],
+            "city": r.get("city"),
+            "bio": r.get("bio"),
+            "bar_association": r.get("bar_association"),
+            "rating_avg": round(float(r.get("rating_avg") or 0), 1),
+            "rating_count": int(r.get("rating_count") or 0),
+            "score": round(float(r["score"]), 3),
+            "reason": matcher_mod.explain(need, r, len(history)),
+        })
+    return {
+        "need": {k: need.get(k) for k in ("areas", "dominant", "summary", "bangla")},
+        "results": results,
+        "fallback": None if results else "directory",
+    }
+
+
 @app.post("/api/chat/stream")
 def post_chat_stream(req: ChatRequest):
     """Token-streaming answer as Server-Sent Events.
