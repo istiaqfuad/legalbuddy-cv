@@ -1,0 +1,48 @@
+# LegalBuddy on Heroku — single container: FastAPI on 127.0.0.1:8000
+# (reached by the Next.js routes via API_INTERNAL_URL) + Next.js
+# standalone server on $PORT (the only port Heroku routes to).
+#
+# Build context is the repo root: the web/ stage builds the Next.js
+# standalone output, the final stage installs the Python API.
+
+FROM node:24-alpine AS web-builder
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci --ignore-scripts
+COPY web/ ./
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm run build
+
+FROM ghcr.io/astral-sh/uv:python3.14-bookworm-slim
+
+ENV UV_SYSTEM_PYTHON=1 \
+    UV_COMPILE_BYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Node 24 runtime for the Next.js standalone server.
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+    && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --frozen --no-dev --no-install-project
+
+COPY src ./src
+RUN uv sync --frozen --no-dev
+
+# Bake the FastEmbed BM25 model into the image so fresh dynos never
+# hit the Hugging Face Hub at startup.
+RUN uv run python -c "from fastembed import SparseTextEmbedding; SparseTextEmbedding('Qdrant/bm25')"
+
+# Next.js standalone server (server.js + .next/static + public).
+COPY --from=web-builder /web/.next/standalone /app/web
+COPY --from=web-builder /web/.next/static /app/web/.next/static
+COPY --from=web-builder /web/public /app/web/public
+
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
+
+CMD ["/app/start.sh"]

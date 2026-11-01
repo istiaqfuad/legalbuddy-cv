@@ -34,6 +34,17 @@ def test_request_batches_preserve_order_and_content():
     assert flat == texts
 
 
+def test_shared_dense_returns_process_wide_singleton(monkeypatch):
+    import legalbuddy.embedder as emb
+
+    monkeypatch.setenv("VOYAGE_API_KEY", "test-key")
+    monkeypatch.setattr(emb, "_dense_singleton", None)
+    try:
+        assert emb.shared_dense() is emb.shared_dense()
+    finally:
+        monkeypatch.setattr(emb, "_dense_singleton", None)
+
+
 def test_pace_waits_when_tpm_window_would_overflow(monkeypatch):
     import time as time_mod
 

@@ -115,7 +115,7 @@ class TestRetrievalWiring:
             def embed(self, texts, input_type=None):
                 return [[0.1] * 4 for _ in texts]
 
-        monkeypatch.setattr(chat_mod, "VoyageDense", FakeDense)
+        monkeypatch.setattr(chat_mod, "shared_dense", lambda: FakeDense())
         monkeypatch.setattr(chat_mod, "make_client", lambda: object())
         monkeypatch.setattr(chat_mod, "encode_sparse",
                             lambda texts: [([1], [0.5])])
@@ -145,7 +145,7 @@ class TestRetrievalWiring:
             def embed(self, texts, input_type=None):
                 return [[0.1] * 4 for _ in texts]
 
-        monkeypatch.setattr(chat_mod, "VoyageDense", FakeDense)
+        monkeypatch.setattr(chat_mod, "shared_dense", lambda: FakeDense())
         monkeypatch.setattr(chat_mod, "make_client", lambda: object())
         monkeypatch.setattr(chat_mod, "encode_sparse",
                             lambda texts: [([1], [0.5])])
@@ -166,7 +166,7 @@ class TestRetrievalWiring:
             def embed(self, texts, input_type=None):
                 return [[0.1] * 4 for _ in texts]
 
-        monkeypatch.setattr(chat_mod, "VoyageDense", FakeDense)
+        monkeypatch.setattr(chat_mod, "shared_dense", lambda: FakeDense())
         monkeypatch.setattr(chat_mod, "make_client", lambda: object())
         monkeypatch.setattr(chat_mod, "encode_sparse",
                             lambda texts: [([1], [0.5])])

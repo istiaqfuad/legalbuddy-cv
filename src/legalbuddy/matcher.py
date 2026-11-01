@@ -156,7 +156,8 @@ def explain(need: dict, lawyer: dict, recent_count: int) -> str:
     if lawyer.get("bar_association"):
         bits.append(f"enrolled with {lawyer['bar_association']}")
     if lawyer.get("rating_count"):
-        bits.append(f"rated {lawyer['rating_avg']:.1f}/5 by {lawyer['rating_count']} clients")
+        n = lawyer["rating_count"]
+        bits.append(f"rated {lawyer['rating_avg']:.1f}/5 by {n} client{'s' if n != 1 else ''}")
     else:
         bits.append("newly listed, no client ratings yet")
     return "; ".join(bits) + "."

@@ -29,16 +29,17 @@ export async function GET() {
     rating_count: number;
   }>;
   return Response.json({
+    // Same shape as recommend results so one card renders both.
     items: rows.map((r) => ({
-      userId: r.id,
-      displayName: r.name,
-      practiceAreas: r.practice_areas ?? [],
+      user_id: r.id,
+      display_name: r.name,
+      practice_areas: r.practice_areas ?? [],
       languages: r.languages ?? [],
       city: r.city,
       bio: r.bio,
-      barAssociation: r.bar_association,
-      ratingAvg: Math.round(Number(r.rating_avg) * 10) / 10,
-      ratingCount: r.rating_count,
+      bar_association: r.bar_association,
+      rating_avg: Math.round(Number(r.rating_avg) * 10) / 10,
+      rating_count: r.rating_count,
     })),
   });
 }

@@ -1,0 +1,44 @@
+{
+  "name": "LegalBuddy",
+  "description": "Grounded Bangladesh legal research copilot — Next.js frontend + FastAPI answer API in one Heroku container.",
+  "stack": "container",
+  "formation": {
+    "web": { "quantity": 1, "size": "basic" }
+  },
+  "env": {
+    "API_INTERNAL_URL": {
+      "description": "How the Next.js routes reach the in-dyno FastAPI. Keep the default.",
+      "value": "http://127.0.0.1:8000"
+    },
+    "FRONTEND_URL": {
+      "description": "Public origin of the app (backend CORS).",
+      "value": "https://legalbuddy.irflab.tech"
+    },
+    "NEXTAUTH_URL": {
+      "description": "Public origin of the app (auth callbacks). Must match the deployed domain.",
+      "value": "https://legalbuddy.irflab.tech"
+    },
+    "NEXTAUTH_SECRET": { "description": "Auth.js session signing secret.", "generator": "secret" },
+    "QDRANT_URL": { "description": "Qdrant Cloud endpoint.", "required": true },
+    "QDRANT_API_KEY": { "description": "Qdrant Cloud API key.", "required": true },
+    "COLLECTION_NAME": { "description": "Qdrant collection for the statute index.", "required": true },
+    "VOYAGE_API_KEY": { "description": "Voyage AI key for dense embeddings.", "required": true },
+    "BASETEN_API_KEY": { "description": "Baseten key for the chat model.", "required": true },
+    "JINA_API_KEY": { "description": "Jina key for the cross-encoder reranker.", "required": true },
+    "DATABASE_URL": { "description": "Neon Postgres connection string.", "required": true },
+    "DATABASE_URL_POOLED": { "description": "Neon pooled connection string.", "required": true },
+    "GOOGLE_CLIENT_ID": { "description": "Google OAuth client id.", "required": true },
+    "GOOGLE_CLIENT_SECRET": { "description": "Google OAuth client secret.", "required": true },
+    "S3_BUCKET": { "description": "Object-storage bucket for uploads.", "required": true },
+    "AWS_ENDPOINT_URL_S3": { "description": "S3-compatible endpoint.", "required": true },
+    "AWS_ACCESS_KEY_ID": { "description": "Object-storage access key.", "required": true },
+    "AWS_SECRET_ACCESS_KEY": { "description": "Object-storage secret key.", "required": true },
+    "AWS_REGION": { "description": "Object-storage region.", "value": "auto" },
+    "STRIPE_SECRET_KEY": { "description": "Stripe secret key.", "required": true },
+    "STRIPE_PUBLIC_KEY": { "description": "Stripe publishable key.", "required": true },
+    "STRIPE_WEBHOOK_SECRET": { "description": "Stripe webhook signing secret.", "required": true },
+    "STRIPE_PRICE_PROFESSIONAL": { "description": "Stripe Price id (Professional).", "required": true },
+    "STRIPE_PRICE_BUSINESS": { "description": "Stripe Price id (Business).", "required": true },
+    "LITE_DAILY_MESSAGES": { "description": "Free-tier cap: answers per user per UTC day.", "value": "20" }
+  }
+}

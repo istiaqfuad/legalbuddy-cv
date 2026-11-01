@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import os
+import threading
 import time
 
 import voyageai
@@ -62,6 +63,21 @@ DEFAULT_TOKENS_PER_MIN = _env_int("VOYAGE_TOKENS_PER_MIN", 8000)
 MAX_TOKENS_PER_REQUEST = _env_int("VOYAGE_MAX_TOKENS_PER_REQUEST", 3000)
 
 _sparse_singleton: SparseTextEmbedding | None = None
+_dense_singleton: VoyageDense | None = None
+
+
+def shared_dense() -> VoyageDense:
+    """Process-wide encoder so the RPM/TPM pacer sees cross-request traffic.
+
+    Every web endpoint must embed through this (never a per-request
+    ``VoyageDense()``): fresh instances each carry a zeroed pacing window,
+    so concurrent requests race inside the same free-tier minute and
+    Voyage answers 429.
+    """
+    global _dense_singleton
+    if _dense_singleton is None:
+        _dense_singleton = VoyageDense()
+    return _dense_singleton
 
 
 def sparse_encoder() -> SparseTextEmbedding:
@@ -104,6 +120,7 @@ class VoyageDense:
         self.tokens_per_min = (DEFAULT_TOKENS_PER_MIN if tokens_per_min is None
                                else tokens_per_min)
         self.total_tokens = 0
+        self._lock = threading.Lock()
         self._last_req = 0.0
         self._window_start = time.monotonic()
         self._window_tokens = 0
@@ -141,25 +158,33 @@ class VoyageDense:
         return batches
 
     def embed(self, texts: list[str], input_type: str) -> list[list[float]]:
+        # Serialize concurrent callers (one uvicorn worker serves many
+        # threaded sync endpoints) so the RPM/TPM pacer below sees every
+        # request. Without this, fresh per-request instances race each
+        # other inside the free-tier window and Voyage answers 429.
         out: list[list[float]] = []
-        for batch in self._request_batches(texts):
-            est = sum(max(estimate_tokens(t), 1) for t in batch)
-            for attempt in range(self.max_retries):
-                try:
-                    self._pace(est)
-                    res = self.client.embed(batch, model=self.model, input_type=input_type)
-                    break
-                except RateLimitError:
-                    # Reset the TPM window so the caller's backoff retry
-                    # does not immediately re-trip the local pacer.
-                    self._window_start, self._window_tokens = time.monotonic(), 0
-                    raise  # outer loop owns rate-limit backoff; don't hammer
-                except Exception:
-                    if attempt == self.max_retries - 1:
-                        raise
-                    time.sleep(2 ** attempt)
-            billed = res.total_tokens or est
-            self._record(billed)
-            out.extend(res.embeddings)
-            self.total_tokens += billed
+        with self._lock:
+            for batch in self._request_batches(texts):
+                out.extend(self._embed_batch(batch, input_type))
         return out
+
+    def _embed_batch(self, batch: list[str], input_type: str) -> list[list[float]]:
+        est = sum(max(estimate_tokens(t), 1) for t in batch)
+        for attempt in range(self.max_retries):
+            try:
+                self._pace(est)
+                res = self.client.embed(batch, model=self.model, input_type=input_type)
+                break
+            except RateLimitError:
+                # Reset the TPM window so the caller's backoff retry
+                # does not immediately re-trip the local pacer.
+                self._window_start, self._window_tokens = time.monotonic(), 0
+                raise  # outer loop owns rate-limit backoff; don't hammer
+            except Exception:
+                if attempt == self.max_retries - 1:
+                    raise
+                time.sleep(2 ** attempt)
+        billed = res.total_tokens or est
+        self._record(billed)
+        self.total_tokens += billed
+        return list(res.embeddings)

@@ -1,0 +1,5 @@
+# Heroku container build (used by `git push heroku`).
+# Local one-shot deploys use `heroku container:push web` instead.
+build:
+  docker:
+    web: Dockerfile.heroku

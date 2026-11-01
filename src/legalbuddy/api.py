@@ -30,6 +30,7 @@ from pydantic import BaseModel, Field
 load_dotenv()
 
 from legalbuddy import chat as chat_mod  # noqa: E402
+from legalbuddy.embedder import shared_dense as _dense  # noqa: E402
 from legalbuddy.store import COLLECTION, make_client  # noqa: E402
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
@@ -205,8 +206,7 @@ async def upload_document(user_id: str | None = Query(default=None, max_length=6
     try:
         client = make_client()
         ensure_docs_collection(client)
-        dense = VoyageDense()
-        dense_vecs = dense.embed([c.text for c in chunks], input_type="document")
+        dense_vecs = _dense().embed([c.text for c in chunks], input_type="document")
         sparse_vecs = encode_sparse([c.text for c in chunks])
         upsert_doc_chunks(client, chunks, dense_vecs, sparse_vecs)
     except HTTPException:
@@ -299,7 +299,7 @@ def post_profile_embed(req: EmbedRequest):
     the Next.js profile route stores it for cosine matching)."""
     from legalbuddy.embedder import VoyageDense
 
-    vec = VoyageDense().embed([req.text], input_type="document")[0]
+    vec = _dense().embed([req.text], input_type="document")[0]
     return {"embedding": vec}
 
 
@@ -328,7 +328,7 @@ def post_match_lawyers(req: MatchRequest):
     if not need.get("dominant"):
         return {"need": need, "results": [], "fallback": "directory"}
     query_text = need.get("summary") or numbered[:2000]
-    need["matter_embedding"] = VoyageDense().embed([query_text], input_type="query")[0]
+    need["matter_embedding"] = _dense().embed([query_text], input_type="query")[0]
     need["bangla"] = bool(need.get("bangla")) or bool(
         matcher_mod.BN_PATTERN.search(numbered))
     ranked = matcher_mod.score_lawyers(need, matcher_mod.fetch_candidates())

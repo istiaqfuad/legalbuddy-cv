@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 
 from openai import OpenAI
 
-from legalbuddy.embedder import VoyageDense, encode_sparse
+from legalbuddy.embedder import encode_sparse, shared_dense
 from legalbuddy.rerank import CANDIDATES as RERANK_CANDIDATES
 from legalbuddy.rerank import rerank_points
 from legalbuddy.memory import (
@@ -99,8 +99,7 @@ def retrieve(question: str, language: str | None = None,
     while filters still come from the explicit arguments.
     """
     q = search_text or question
-    dense = VoyageDense()
-    dense_q = dense.embed([q], input_type="query")[0]
+    dense_q = shared_dense().embed([q], input_type="query")[0]
     sparse_q = encode_sparse([q])[0]
     query_filter = build_filter(language=language, act_year=act_year,
                                 section_label=section_label)
@@ -192,8 +191,7 @@ def retrieve_docs(question: str, user_id: str, doc_ids: list[str], limit: int = 
     statutes); isolation is unchanged because reranking only reorders the
     already-filtered points.
     """
-    dense = VoyageDense()
-    dense_q = dense.embed([question], input_type="query")[0]
+    dense_q = shared_dense().embed([question], input_type="query")[0]
     sparse_q = encode_sparse([question])[0]
     hits = search_user_docs(make_client(), dense_q, sparse_q, user_id, doc_ids,
                             limit=max(limit, RERANK_CANDIDATES))

@@ -9,3 +9,6 @@ UI work (theme, copy, layout, logo) is deliberately excluded.
   silent-stall watchdog, and the no-leak error contract.
 - [Ingestion pipeline](ingestion-pipeline.md) — chunking normalizer,
   resumable deterministic ingestion, Voyage pacing, Qdrant client fix.
+- [Case studies pipeline](case-studies-pipeline.md) — triaging 8,493
+  judgment PDFs (noisy/broken-Bangla/scanned), Glimmer OCR, section-aware
+  case chunks, `laws` + `case_studies` collections.

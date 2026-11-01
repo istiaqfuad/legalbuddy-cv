@@ -127,7 +127,7 @@ def test_retrieve_fusion_dispatch(monkeypatch):
         def embed(self, texts, input_type=None):
             return [[0.1, 0.2]]
 
-    monkeypatch.setattr(chat_mod, "VoyageDense", lambda: FakeDense())
+    monkeypatch.setattr(chat_mod, "shared_dense", lambda: FakeDense())
     monkeypatch.setattr(chat_mod, "encode_sparse", lambda texts: [([1], [0.5])])
     monkeypatch.setattr(chat_mod, "make_client", lambda: object())
     monkeypatch.setattr(chat_mod, "build_filter", lambda **k: None)

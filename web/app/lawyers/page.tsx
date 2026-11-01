@@ -273,9 +273,12 @@ export default function LawyersPage() {
     };
   }, []);
 
-  async function suggest() {
-    if (busy) return;
-    setBusy(true);
+  /** Re-pull suggestions; silent when refreshing after a rating. */
+  async function fetchSuggestions(silent = false) {
+    if (!silent) {
+      if (busy) return;
+      setBusy(true);
+    }
     try {
       const r = await fetch("/api/lawyers/recommend", { method: "POST" });
       const d = r.ok ? await r.json() : null;
@@ -285,8 +288,17 @@ export default function LawyersPage() {
         setFallback(d.fallback ?? null);
       }
     } finally {
-      setBusy(false);
+      if (!silent) setBusy(false);
     }
+  }
+
+  function suggest() {
+    void fetchSuggestions();
+  }
+
+  function refreshAfterRating() {
+    void loadDirectory();
+    void fetchSuggestions(true);
   }
 
   return (
@@ -338,7 +350,7 @@ export default function LawyersPage() {
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             {need?.summary ? <p className="text-sm text-stone-500 md:col-span-2">Read as: {need.summary}</p> : null}
             {suggestions.map((s) => (
-              <LawyerCard key={s.user_id} l={s} reason={s.reason} signedIn={signedIn} onRated={loadDirectory} />
+              <LawyerCard key={s.user_id} l={s} reason={s.reason} signedIn={signedIn} onRated={refreshAfterRating} />
             ))}
           </div>
         )}
