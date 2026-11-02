@@ -22,7 +22,7 @@ export default function BillingSuccessPage() {
       try {
         const res = await fetch("/api/billing/status");
         const d = res.ok ? await res.json() : null;
-        if (d && (d.plan === "professional" || d.plan === "business")) {
+        if (d && (d.plan === "starter" || d.plan === "professional" || d.plan === "business")) {
           setRole(typeof d.role === "string" ? d.role : "user");
           setState("ready");
           return;

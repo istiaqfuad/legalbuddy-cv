@@ -28,8 +28,9 @@ const WHO: Array<{ id: AccountType; title: string; body: string }> = [
   { id: "lawyer", title: "Lawyer", body: "Cited research plus enrollment verification." },
 ];
 
-const PLANS: Array<{ id: "lite" | "professional" | "business"; price: string; body: string }> = [
+const PLANS: Array<{ id: "lite" | "starter" | "professional" | "business"; price: string; body: string }> = [
   { id: "lite", price: "Free", body: "Capped legal Q&A, full citations." },
+  { id: "starter", price: "~$5/mo", body: "100 answers a day for your first matter." },
   { id: "professional", price: "~$12.99/mo", body: "Unlimited cited research and case analysis." },
   { id: "business", price: "~$19.99/mo", body: "Drafting, trackers, and a company workspace." },
 ];
@@ -42,7 +43,7 @@ function LoginForm() {
   );
   const [step, setStep] = useState<Step>("who");
   const [who, setWho] = useState<AccountType>("individual");
-  const [plan, setPlan] = useState<"lite" | "professional" | "business">("lite");
+  const [plan, setPlan] = useState<"lite" | "starter" | "professional" | "business">("lite");
   const [name, setName] = useState("");
   const [company, setCompany] = useState("");
   const [email, setEmail] = useState("");

@@ -78,6 +78,37 @@ verification is document-based with human review:
 Set `ADMIN_EMAILS` to enable review; until then submissions queue safely
 as pending.
 
+## Starter: the $5 funnel tier
+
+Starter (~$5/mo) sits between Lite and Professional for users with one
+live matter. Its only lever is quota: 100 cited answers a day
+(`STARTER_DAILY_MESSAGES`) while the subscription is current, versus 20
+on Lite and unlimited on Professional/Business. No separate feature
+gates exist, so Starter users hit the cap and feel the upgrade, instead
+of hitting a paywall they never asked for. The catalog entry is created
+by `web/scripts/stripe-setup.mjs` like the others
+(`STRIPE_PRICE_STARTER`); the webhook resolves it by price id with a
+metadata fallback, and `/billing/success` accepts it.
+
+## Cancel and downgrade (with confirmation)
+
+Downgrades and cancellations ask first, upgrades never do. The Pricing
+page compares tier ranks: any move to a cheaper tier opens
+`ConfirmModal` (Esc/backdrop closes, focus starts on the safe choice).
+Confirming calls the honest endpoint:
+
+- Paid to Lite calls `POST /api/billing/cancel`, which cancels the
+  Stripe subscription at the end of the billing period. Access stays on
+  until then; the webhook flips the plan to Lite when the subscription
+  actually ends. The old direct `PATCH /api/user` plan flip never
+  touches Stripe, so the page no longer uses it for paid users.
+- Paid to a cheaper paid tier calls `POST /api/billing/change`, which
+  swaps the price on the existing subscription (prorated, pending
+  cancels lifted). No second subscription is created.
+- `POST /api/billing/checkout` refuses when an active subscription
+  already exists, so paid-to-paid moves cannot double-subscribe through
+  Checkout either.
+
 ## Accounts
 
 Signup is a three-step form (account type, details, plan): Individual,

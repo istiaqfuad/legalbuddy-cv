@@ -36,6 +36,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
 });
 
 const CATALOG = [
+  { key: "starter", name: "LegalBuddy Starter", amount: 500, memo: "Limited daily legal research for your first real matter." },
   { key: "professional", name: "LegalBuddy Professional", amount: 1299, memo: "Cited legal research and case analysis for lawyers and professionals." },
   { key: "business", name: "LegalBuddy Business", amount: 1999, memo: "Contract drafting, compliance tracking, and a workspace for company legal files." },
 ];
@@ -68,5 +69,6 @@ for (const entry of CATALOG) {
   ids[entry.key] = price.id;
 }
 console.log("\nAdd to .env:");
+console.log(`STRIPE_PRICE_STARTER=${ids.starter}`);
 console.log(`STRIPE_PRICE_PROFESSIONAL=${ids.professional}`);
 console.log(`STRIPE_PRICE_BUSINESS=${ids.business}`);

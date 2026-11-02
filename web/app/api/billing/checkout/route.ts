@@ -18,8 +18,8 @@ export async function POST(req: Request) {
   } catch {
     return Response.json({ detail: "Request body must be JSON." }, { status: 400 });
   }
-  if (plan !== "professional" && plan !== "business") {
-    return Response.json({ detail: "Plan must be professional or business." }, { status: 400 });
+  if (plan !== "starter" && plan !== "professional" && plan !== "business") {
+    return Response.json({ detail: "Plan must be starter, professional, or business." }, { status: 400 });
   }
   let priceId: string;
   try {
@@ -45,6 +45,15 @@ export async function POST(req: Request) {
         customerId,
         session.user.id,
       ]);
+    }
+    // Paid-to-paid moves go through /api/billing/change (in-place price
+    // swap), so Checkout never stacks a second subscription on anyone.
+    const existing = await getStripe().subscriptions.list({ customer: customerId, limit: 5 });
+    if (existing.data.some((s) => s.status === "active" || s.status === "trialing")) {
+      return Response.json(
+        { detail: "You already have a subscription. Change plans from Pricing." },
+        { status: 400 },
+      );
     }
     const base = (process.env.NEXTAUTH_URL ?? "http://localhost:3001").replace(/\/$/, "");
     // integration_identifier labels this flow in the Dashboard (dahlia+).

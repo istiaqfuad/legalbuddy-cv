@@ -45,7 +45,7 @@ export async function PATCH(req: Request) {
       vals.push("pending");
     }
   }
-  if (body?.plan === "lite" || body?.plan === "professional" || body?.plan === "business") {
+  if (body?.plan === "lite" || body?.plan === "starter" || body?.plan === "professional" || body?.plan === "business") {
     sets.push(`plan = $${sets.length + 1}`);
     vals.push(body.plan);
   }

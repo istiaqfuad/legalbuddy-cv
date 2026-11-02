@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { internalBase, internalHeaders } from "@/lib/internal-api";
 import { subscriptionActive } from "@/lib/stripe";
 
 /** Server-side proxy: browser -> Next route -> Python API.
@@ -18,9 +19,10 @@ import { subscriptionActive } from "@/lib/stripe";
 const UPSTREAM_TIMEOUT_MS = 180_000;
 const GENERIC_ERROR = "The assistant is unavailable right now. Please try again in a moment.";
 
-/** Lite plan: capped assistant answers per UTC day. Paid plans with an
- * active or trialing subscription are unlimited; anything else (past
- * due, canceled, disputed) falls back to Lite. Quota failures stay
+/** Lite plan: capped assistant answers per UTC day. Starter is capped
+ * higher while its subscription is current; Professional and Business
+ * with an active or trialing subscription are unlimited. Anything else
+ * (past due, canceled, disputed) falls back to Lite. Quota failures stay
  * permissive: a broken count must not lock users out. */
 async function withinQuota(userId: string): Promise<boolean> {
   try {
@@ -30,8 +32,11 @@ async function withinQuota(userId: string): Promise<boolean> {
     )) as Array<{ plan: string; subscription_status: string | null }>;
     const u = rows[0];
     if (!u) return true;
-    if (u.plan !== "lite" && subscriptionActive(u.subscription_status)) return true;
-    const limit = Number(process.env.LITE_DAILY_MESSAGES ?? "20") || 20;
+    if (u.plan !== "lite" && u.plan !== "starter" && subscriptionActive(u.subscription_status)) return true;
+    const limit =
+      u.plan === "starter" && subscriptionActive(u.subscription_status)
+        ? Number(process.env.STARTER_DAILY_MESSAGES ?? "100") || 100
+        : Number(process.env.LITE_DAILY_MESSAGES ?? "20") || 20;
     const used = (await getDb().query(
       `SELECT COUNT(*)::int AS n FROM messages m
        JOIN conversations c ON c.id = m.conversation_id
@@ -73,11 +78,11 @@ export async function POST(req: Request) {
     }
   }
 
-  const base = process.env.API_INTERNAL_URL ?? "http://localhost:8000";
+  const base = internalBase();
   try {
     const upstream = await fetch(`${base}/api/chat/stream`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: internalHeaders({ "Content-Type": "application/json" }),
       // No language filter: the API matches every query automatically and
       // answers in the question's language.
       body: JSON.stringify({

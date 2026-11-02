@@ -82,12 +82,13 @@ export async function POST(req: Request) {
 
 /** Resolve a plan from the subscription's price, falling back to the
  * metadata stamped at checkout. Unknown prices keep the Lite default. */
-async function planFor(subscription: Stripe.Subscription): Promise<"professional" | "business" | "lite"> {
+async function planFor(subscription: Stripe.Subscription): Promise<"starter" | "professional" | "business" | "lite"> {
   const priceId = subscription.items.data[0]?.price.id;
   if (priceId === process.env.STRIPE_PRICE_BUSINESS) return "business";
   if (priceId === process.env.STRIPE_PRICE_PROFESSIONAL) return "professional";
+  if (priceId === process.env.STRIPE_PRICE_STARTER) return "starter";
   const meta = (subscription.metadata?.plan ?? "").toLowerCase();
-  if (meta === "business" || meta === "professional") return meta;
+  if (meta === "business" || meta === "professional" || meta === "starter") return meta;
   return "lite";
 }
 
