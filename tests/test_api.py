@@ -241,3 +241,32 @@ def test_doc_text_scoped_and_capped(monkeypatch):
     body = resp.json()
     assert body["doc_id"] == "d1"
     assert len(body["chunks"]) == 40  # capped, not the full 50
+
+
+def test_contract_review_endpoint_uses_owner_chunks(monkeypatch):
+    """Review endpoint scopes chunks and returns validated flags."""
+    from types import SimpleNamespace
+
+    import legalbuddy.api as api_real
+    import legalbuddy.contract_review as cr_mod
+    import legalbuddy.store as store_mod
+    pts = [SimpleNamespace(payload={"text": "Pay liquidated damages of Tk 500 per day."})]
+
+    class FakeClient:
+        def scroll(self, **kwargs):
+            return (pts, None)
+
+    monkeypatch.setattr(store_mod, "make_client", lambda: FakeClient())
+    monkeypatch.setattr(store_mod, "ensure_docs_collection",
+                        lambda client, *a, **k: None)
+    monkeypatch.setattr(
+        cr_mod, "review_contract",
+        lambda texts: {"flags": [{"title": "Penalty cap", "clause": "pay",
+                                  "risk": "high", "explanation": "capped",
+                                  "citation": {"act": "A", "section": "1"}}],
+                       "note": ""})
+    resp = TestClient(api_real.app).post("/api/contract-review",
+                                         params={"doc_id": "d9", "user_id": "u9"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["doc_id"] == "d9" and len(body["flags"]) == 1

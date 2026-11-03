@@ -402,6 +402,73 @@ def document_text(doc_id: str = Query(default="", max_length=64),
     return DocumentText(doc_id=doc_id, chunks=texts)
 
 
+class ContractReviewOut(BaseModel):
+    doc_id: str
+    flags: list[dict]
+    note: str
+
+
+@app.post("/api/contract-review", response_model=ContractReviewOut,
+          dependencies=[internal])
+def review_contract_endpoint(doc_id: str = Query(default="", max_length=64),
+                             user_id: str | None = Query(default=None, max_length=64)):
+    """Grounded contract flags for one vault file (business tier).
+
+    Clause spotting and citation validation are rules; one model call
+    drafts the flags, and only flags citing retrieved statutes survive.
+    Scoped to the session user like every other document route.
+    """
+    from legalbuddy.contract_review import review_contract
+    from legalbuddy.store import (DOCS_COLLECTION, ensure_docs_collection,
+                                  make_client)
+    from qdrant_client import models
+
+    user = _require_user(user_id)
+    if not doc_id:
+        raise HTTPException(status_code=400, detail="Choose a document first.")
+    client = make_client()
+    try:
+        ensure_docs_collection(client)
+        texts: list[str] = []
+        offset = None
+        while len(texts) < 40:
+            points, offset = client.scroll(
+                collection_name=DOCS_COLLECTION,
+                scroll_filter=models.Filter(must=[
+                    models.FieldCondition(
+                        key="user_id", match=models.MatchValue(value=user)),
+                    models.FieldCondition(
+                        key="doc_id", match=models.MatchValue(value=doc_id))]),
+                limit=64, offset=offset, with_payload=True,
+                with_vectors=False)
+            for p in points:
+                t = (p.payload or {}).get("text", "")
+                if t:
+                    texts.append(str(t))
+                    if len(texts) >= 40:
+                        break
+            if offset is None:
+                break
+    except HTTPException:
+        raise
+    except Exception:
+        log.exception("contract review read failed")
+        raise HTTPException(
+            status_code=502, detail="Could not read the document.") from None
+    if not texts:
+        raise HTTPException(status_code=400,
+                            detail="No readable text found in that file.")
+    try:
+        result = review_contract(texts)
+    except Exception:
+        log.exception("contract review failed")
+        raise HTTPException(
+            status_code=502,
+            detail="The review could not run. Please try again.") from None
+    return ContractReviewOut(doc_id=doc_id, flags=result["flags"],
+                             note=result["note"])
+
+
 @app.delete("/api/documents/{doc_id}", dependencies=[internal])
 def delete_document(doc_id: str,
                     user_id: str | None = Query(default=None, max_length=64)):
