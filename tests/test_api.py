@@ -190,3 +190,29 @@ def test_health_degraded(monkeypatch):
     assert resp.status_code == 200
     assert resp.json()["status"] == "degraded"
     assert resp.json()["detail"] == "Index check failed."
+
+
+def test_doc_dates_suggest(monkeypatch):
+    """Expiry candidates come from the doc's own stored text (rules)."""
+    from types import SimpleNamespace
+
+    import legalbuddy.store as store_mod
+    pts = [SimpleNamespace(payload={
+        "text": "Trade Licence. Valid up to 30/06/2026. Renew before expiry."})]
+
+    class FakeClient:
+        def scroll(self, **kwargs):
+            filt = kwargs["scroll_filter"]
+            keys = sorted(c.key for c in filt.must)
+            assert keys == ["doc_id", "user_id"]  # never cross-user
+            return (pts, None)
+
+    monkeypatch.setattr(store_mod, "make_client", lambda: FakeClient())
+    monkeypatch.setattr(store_mod, "ensure_docs_collection",
+                        lambda client, *a, **k: None)
+    resp = TestClient(api_mod.app).get("/api/documents/d1/dates",
+                                       params={"user_id": "u1"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert [r["date"] for r in body] == ["2026-06-30"]
+    assert all(r["context"] for r in body)

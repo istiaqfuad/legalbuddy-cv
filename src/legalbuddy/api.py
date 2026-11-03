@@ -290,6 +290,57 @@ def list_documents(user_id: str | None = Query(default=None, max_length=64)):
     return [DocumentOut(**v) for v in seen.values()]
 
 
+class DateSuggestion(BaseModel):
+    date: str
+    context: str
+
+
+@app.get("/api/documents/{doc_id}/dates", response_model=list[DateSuggestion],
+         dependencies=[internal])
+def suggest_doc_dates(doc_id: str,
+                      user_id: str | None = Query(default=None, max_length=64)):
+    """Expiry-date candidates from the document's own stored text.
+
+    Rules only (see :mod:`legalbuddy.expiry`): the vault suggests,
+    the owner confirms. Scoped to the session user like every other
+    document route.
+    """
+    from legalbuddy.expiry import extract_candidate_dates
+    from legalbuddy.store import (DOCS_COLLECTION, ensure_docs_collection,
+                                  make_client)
+    from qdrant_client import models
+
+    user = _require_user(user_id)
+    client = make_client()
+    try:
+        ensure_docs_collection(client)
+        texts: list[str] = []
+        offset = None
+        while True:
+            points, offset = client.scroll(
+                collection_name=DOCS_COLLECTION,
+                scroll_filter=models.Filter(must=[
+                    models.FieldCondition(
+                        key="user_id", match=models.MatchValue(value=user)),
+                    models.FieldCondition(
+                        key="doc_id", match=models.MatchValue(value=doc_id))]),
+                limit=256, offset=offset, with_payload=True,
+                with_vectors=False)
+            for p in points:
+                t = (p.payload or {}).get("text", "")
+                if t:
+                    texts.append(str(t))
+            if offset is None:
+                break
+    except HTTPException:
+        raise
+    except Exception:
+        log.exception("document dates failed")
+        raise HTTPException(
+            status_code=502, detail="Could not read the document.") from None
+    return extract_candidate_dates("\n".join(texts))
+
+
 @app.delete("/api/documents/{doc_id}", dependencies=[internal])
 def delete_document(doc_id: str,
                     user_id: str | None = Query(default=None, max_length=64)):
