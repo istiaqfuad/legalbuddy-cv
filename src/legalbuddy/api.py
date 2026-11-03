@@ -22,7 +22,7 @@ import os
 from typing import Literal
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -46,6 +46,20 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
 )
+
+
+def require_internal(x_internal_token: str | None = Header(default=None)) -> None:
+    """Frontend-only gate: when INTERNAL_API_TOKEN is configured, every
+    /api/* call must carry it as ``x-internal-token``. Only the Next.js
+    server knows the value (browsers never see it), so direct outside
+    calls to the Python API are rejected. Unset locally means no gate.
+    ``/health`` stays open (loopback-only in production)."""
+    expected = os.environ.get("INTERNAL_API_TOKEN", "")
+    if expected and x_internal_token != expected:
+        raise HTTPException(status_code=403, detail="Forbidden.")
+
+
+internal = Depends(require_internal)
 
 
 class ChatRequest(BaseModel):
@@ -75,6 +89,8 @@ class CitationOut(BaseModel):
     kind: str = "statute"
     doc_filename: str = ""
     doc_page: int | None = None
+    case_number: str = ""
+    court: str = ""
 
 
 class ChatResponse(BaseModel):
@@ -103,7 +119,7 @@ def health() -> HealthResponse:
             detail="Index check failed.")
 
 
-@app.post("/api/chat", response_model=ChatResponse)
+@app.post("/api/chat", response_model=ChatResponse, dependencies=[internal])
 def post_chat(req: ChatRequest) -> ChatResponse:
     """Grounded answer + section citations for one question."""
     try:
@@ -131,6 +147,7 @@ def _citation_out(c) -> CitationOut:
         section_label=c.section_label, section_title=c.section_title,
         excerpt=c.excerpt, source_url=c.source_url, score=c.score,
         kind=c.kind, doc_filename=c.doc_filename, doc_page=c.doc_page,
+        case_number=c.case_number, court=c.court,
     )
 
 
@@ -153,7 +170,7 @@ def _require_user(user_id: str | None) -> str:
     return user
 
 
-@app.post("/api/documents", response_model=DocumentOut)
+@app.post("/api/documents", response_model=DocumentOut, dependencies=[internal])
 async def upload_document(user_id: str | None = Query(default=None, max_length=64),
                           file: UploadFile = File(...)) -> DocumentOut:
     """Ingest one user file: parse, chunk, embed, store (isolated by user).
@@ -228,7 +245,7 @@ async def upload_document(user_id: str | None = Query(default=None, max_length=6
                        created_at=datetime.now(timezone.utc).isoformat())
 
 
-@app.get("/api/documents", response_model=list[DocumentOut])
+@app.get("/api/documents", response_model=list[DocumentOut], dependencies=[internal])
 def list_documents(user_id: str | None = Query(default=None, max_length=64)):
     """List the user's documents (distinct doc_ids from the vector store)."""
     from legalbuddy.store import DOCS_COLLECTION, ensure_docs_collection, make_client
@@ -269,7 +286,7 @@ def list_documents(user_id: str | None = Query(default=None, max_length=64)):
     return [DocumentOut(**v) for v in seen.values()]
 
 
-@app.delete("/api/documents/{doc_id}")
+@app.delete("/api/documents/{doc_id}", dependencies=[internal])
 def delete_document(doc_id: str,
                     user_id: str | None = Query(default=None, max_length=64)):
     """Delete one document's vectors (always scoped to the session user)."""
@@ -354,7 +371,50 @@ def post_match_lawyers(req: MatchRequest):
     }
 
 
-@app.post("/api/chat/stream")
+class AgentChatRequest(ChatRequest):
+    max_tool_calls: int = Field(default=4, ge=1, le=10)
+
+
+@app.post("/api/chat/agent/stream", dependencies=[internal])
+def post_agent_stream(req: AgentChatRequest):
+    """Deep-research answer as Server-Sent Events.
+
+    Same event contract as :func:`post_chat_stream` plus ``step``
+    (``{"tool": name, "status": "started" | "done"}``) so the UI can
+    narrate the research while it runs. ``max_tool_calls`` caps the
+    ReAct loop; the web tier sets it from the user's plan.
+    """
+    def events():
+        try:
+            from legalbuddy import agent as agent_mod
+            gen = agent_mod.run_agent(
+                req.question, conversation_id=req.conversation_id,
+                user_id=req.user_id, doc_ids=req.doc_ids,
+                max_tool_calls=req.max_tool_calls)
+            for kind, val in gen:
+                if kind == "step":
+                    yield _sse("step", json.dumps(val))
+                elif kind == "meta":
+                    yield _sse("meta", ChatResponse(
+                        answer="", model=val["model"],
+                        citations=[_citation_out(c) for c in val["citations"]],
+                    ).model_dump_json())
+                elif kind == "token":
+                    yield _sse("token", json.dumps({"t": val}))
+                elif kind == "done":
+                    yield _sse("done", ChatResponse(
+                        answer=val.text, model=val.model,
+                        citations=[_citation_out(c) for c in val.citations],
+                    ).model_dump_json())
+        except Exception:  # noqa: BLE401 — mid-stream: status is sent, emit generic error
+            log.exception("agent stream failed")
+            yield _sse("error", '{"detail": "Research failed. Please try again."}')
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache",
+                                      "X-Accel-Buffering": "no"})
+
+
+@app.post("/api/chat/stream", dependencies=[internal])
 def post_chat_stream(req: ChatRequest):
     """Token-streaming answer as Server-Sent Events.
 

@@ -10,6 +10,7 @@ import type { Citation } from "./types";
 
 export type ChatEvent =
   | { type: "token"; text: string }
+  | { type: "step"; tool: string; status: "started" | "done" }
   | { type: "meta"; citations: Citation[]; model?: string }
   | { type: "done"; answer: string; citations: Citation[]; model?: string };
 
@@ -43,6 +44,8 @@ export interface StreamOptions {
   docIds?: string[];
   /** Active conversation: loads past turns for follow-ups, records this one. */
   conversationId?: string;
+  /** Deep-research agent loop instead of the single retrieval pass. */
+  agent?: boolean;
 }
 
 const DEFAULT_GRACE_MS = 150_000;
@@ -68,7 +71,7 @@ export async function* streamChat(
   const idleMs = opts.idleMs ?? DEFAULT_IDLE_MS;
   let res: Response;
   try {
-    res = await fetch("/api/chat", {
+    res = await fetch(opts.agent ? "/api/agent" : "/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -85,6 +88,16 @@ export async function* streamChat(
     // 402 is the free-plan quota: surfaced as its own banner with an
     // upgrade path, not the generic failure message.
     if (res.status === 402) throw new ChatStreamError("quota-exceeded");
+    // 403 with agent-locked means Lite on the agent endpoint: the UI
+    // shows the upgrade nudge instead of the generic failure.
+    if (res.status === 403) {
+      const data = await res.json().catch(() => null);
+      throw new ChatStreamError(
+        typeof data?.code === "string" && data.code === "agent-locked"
+          ? "agent-locked"
+          : `bad upstream: ${res.status}`,
+      );
+    }
     throw new ChatStreamError(`bad upstream: ${res.status}`);
   }
   const reader = res.body.getReader();
@@ -107,6 +120,10 @@ export async function* streamChat(
         if (ev.name === "token") {
           gotToken = true;
           yield { type: "token", text: (JSON.parse(ev.data) as { t: string }).t };
+        } else if (ev.name === "step") {
+          gotToken = true;
+          const data = JSON.parse(ev.data) as { tool?: string; status?: "started" | "done" };
+          yield { type: "step", tool: data.tool ?? "search", status: data.status ?? "started" };
         } else if (ev.name === "meta" || ev.name === "done") {
           const data = JSON.parse(ev.data) as {
             answer?: string;

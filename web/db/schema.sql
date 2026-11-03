@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
   -- Billing (Stripe is the source of truth; these columns are a cache
   -- written only from verified webhook events, never from the client).
   stripe_customer_id TEXT UNIQUE,
-  plan TEXT NOT NULL DEFAULT 'lite' CHECK (plan IN ('lite', 'professional', 'business')),
+  plan TEXT NOT NULL DEFAULT 'lite' CHECK (plan IN ('lite', 'starter', 'professional', 'business')),
   subscription_status TEXT,
   stripe_subscription_id TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -40,7 +40,10 @@ ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('user', 'lawye
 ALTER TABLE users ADD COLUMN IF NOT EXISTS lawyer_status TEXT NOT NULL DEFAULT 'none' CHECK (lawyer_status IN ('none', 'pending', 'verified', 'rejected'));
 ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarded BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT UNIQUE;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'lite' CHECK (plan IN ('lite', 'professional', 'business'));
+-- Starter tier: existing databases carry the old three-value CHECK.
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_plan_check;
+ALTER TABLE users ADD CONSTRAINT users_plan_check CHECK (plan IN ('lite', 'starter', 'professional', 'business'));
+ALTER TABLE users ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'lite' CHECK (plan IN ('lite', 'starter', 'professional', 'business'));
 ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_status TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;
 CREATE INDEX IF NOT EXISTS users_stripe_customer_idx ON users(stripe_customer_id);

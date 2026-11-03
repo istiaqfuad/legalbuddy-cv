@@ -13,9 +13,9 @@ import { create } from "zustand";
 import { streamChat } from "@/lib/chat-api";
 import type { ChatMessage, Citation, Conversation, UserDocument } from "@/lib/types";
 
-/** Sidebar card key: `s1` for statute [1], `d1` for document [D1]. */
+/** Sidebar card key: `s1` for statute [1], `d1` for file [D1], `c1` for case [C1]. */
 export function citationKey(c: Citation): string {
-  return `${c.kind === "document" ? "d" : "s"}${c.ref}`;
+  return `${c.kind === "document" ? "d" : c.kind === "case" ? "c" : "s"}${c.ref}`;
 }
 
 async function saveMessage(
@@ -39,6 +39,13 @@ interface ChatState {
   pending: boolean;
   /** Free-plan quota hit on the visible chat: banner links to pricing. */
   quotaExceeded: boolean;
+  /** Deep-research agent loop for the next send (plan-gated server-side). */
+  agentMode: boolean;
+  /** Live tool narrative for the in-flight agent run. */
+  agentSteps: Array<{ tool: string; status: "started" | "done" }>;
+  /** Lite user tried deep research: banner links to pricing. */
+  agentLocked: boolean;
+  setAgentMode: (on: boolean) => void;
   /** Per-conversation message buffers; `messages` mirrors the active one. */
   buffers: Record<string, ChatMessage[]>;
   /** Conversations with a live stream right now. */
@@ -117,6 +124,8 @@ export const useChatStore = create<ChatState>()((set, get) => {
     conversationId: string,
   ): Promise<void> {
     const docIds = get().attachedIds;
+    const useAgent = get().agentMode;
+    if (useAgent) set({ agentSteps: [], agentLocked: false });
     // Local accumulator: state reads would go stale when several token
     // events land in one read chunk.
     let acc = "";
@@ -143,12 +152,18 @@ export const useChatStore = create<ChatState>()((set, get) => {
         signal: ctrl.signal,
         docIds,
         conversationId,
+        agent: useAgent,
       })) {
         if (!alive()) return;
         if (ev.type === "token") {
           acc += ev.text;
           const text = acc;
           patch((msgs) => replaceAt(msgs, assistantId, { text }));
+        } else if (ev.type === "step") {
+          const step = { tool: ev.tool, status: ev.status };
+          set((s) =>
+            conversationId === s.activeId ? { agentSteps: [...s.agentSteps, step] } : {},
+          );
         } else {
           if (ev.citations.length > 0 || ev.type === "done") {
             if (ev.citations.length > 0) finalCitations = ev.citations;
@@ -186,6 +201,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
     } catch (err) {
       if (!alive()) return;
       const quota = err instanceof Error && err.message === "quota-exceeded";
+      const locked = err instanceof Error && err.message === "agent-locked";
       if (ctrl.signal.aborted) {
         // The user stopped it: keep the partial answer, save what exists,
         // and stay quiet instead of showing the error banner.
@@ -209,7 +225,11 @@ export const useChatStore = create<ChatState>()((set, get) => {
       });
       // A background failure must not raise the banner on another chat.
       if (conversationId === get().activeId) {
-        set({ failed: true, ...(quota ? { quotaExceeded: true } : {}) });
+        set({
+          failed: true,
+          ...(quota ? { quotaExceeded: true } : {}),
+          ...(locked ? { agentLocked: true, agentMode: false } : {}),
+        });
       }
     } finally {
       if (streamControllers[conversationId] === ctrl) {
@@ -232,6 +252,9 @@ export const useChatStore = create<ChatState>()((set, get) => {
     messages: [],
     pending: false,
     quotaExceeded: false,
+    agentMode: false,
+    agentSteps: [],
+    agentLocked: false,
     buffers: {},
     busy: {},
     failed: false,
@@ -481,7 +504,9 @@ export const useChatStore = create<ChatState>()((set, get) => {
       }
     },
 
-    dismissError: () => set({ failed: false, quotaExceeded: false }),
+    dismissError: () => set({ failed: false, quotaExceeded: false, agentLocked: false }),
+
+    setAgentMode: (on) => set({ agentMode: on, agentLocked: false }),
 
     toggleSource: (ref) =>
       set((s) => ({ expandedRef: s.expandedRef === ref ? null : ref })),

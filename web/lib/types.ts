@@ -1,4 +1,4 @@
-export type CitationKind = "statute" | "document";
+export type CitationKind = "statute" | "document" | "case";
 
 export interface Citation {
   ref: number;
@@ -13,6 +13,8 @@ export interface Citation {
   kind: CitationKind;
   doc_filename: string;
   doc_page: number | null;
+  case_number: string;
+  court: string;
 }
 
 export interface UserDocument {

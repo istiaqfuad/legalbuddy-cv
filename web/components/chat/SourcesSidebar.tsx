@@ -22,12 +22,31 @@ export default function SourcesSidebar() {
 
   if (!open) return null;
 
-  const statutes = citations.filter((c) => c.kind !== "document");
+  const statutes = citations.filter((c) => c.kind === "statute");
+  const cases = citations.filter((c) => c.kind === "case");
   const docs = citations.filter((c) => c.kind === "document");
 
   const cards = (
     <div className="space-y-2">
       {statutes.map((c) => {
+        const key = citationKey(c);
+        return (
+          <SourceCard
+            key={key}
+            cardKey={key}
+            citation={c}
+            open={expandedRef === key}
+            flash={flash === key}
+            onToggle={() => toggleSource(key)}
+          />
+        );
+      })}
+      {cases.length > 0 ? (
+        <p className="pt-2 text-xs font-semibold tracking-wider text-stone-500 uppercase">
+          From case law · {cases.length}
+        </p>
+      ) : null}
+      {cases.map((c) => {
         const key = citationKey(c);
         return (
           <SourceCard

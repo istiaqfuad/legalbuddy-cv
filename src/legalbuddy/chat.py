@@ -71,9 +71,12 @@ class Citation:
     chunk_id: str
     score: float
     # Document citations: kind="document", ref renders as [Dn].
+    # Case citations: kind="case", ref renders as [Cn].
     kind: str = "statute"
     doc_filename: str = ""
     doc_page: int | None = None
+    case_number: str = ""
+    court: str = ""
 
 
 @dataclass

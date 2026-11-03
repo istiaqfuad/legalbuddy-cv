@@ -10,6 +10,14 @@ import ThinkingDots from "./ThinkingDots";
 
 const ACCEPTED_FILES = ".pdf,.docx,.txt,.md";
 
+/** Human line for an agent tool step. Unknown tools show raw. */
+function stepLabel(tool: string): string {
+  if (tool === "search_statutes") return "Searching the statutes";
+  if (tool === "search_cases") return "Searching decided cases";
+  if (tool === "search_user_files") return "Searching your files";
+  return `Running ${tool}`;
+}
+
 /** Conversation view. Owns input focus, scroll following, and layout.
  * All conversation state lives in the chat store; cited sections live
  * in the sidebar and appear only on demand.
@@ -19,6 +27,10 @@ export default function Chat() {
   const pending = useChatStore((s) => s.pending);
   const failed = useChatStore((s) => s.failed);
   const quotaExceeded = useChatStore((s) => s.quotaExceeded);
+  const agentMode = useChatStore((s) => s.agentMode);
+  const agentSteps = useChatStore((s) => s.agentSteps);
+  const agentLocked = useChatStore((s) => s.agentLocked);
+  const setAgentMode = useChatStore((s) => s.setAgentMode);
   const send = useChatStore((s) => s.send);
   const stop = useChatStore((s) => s.stop);
   const regenerate = useChatStore((s) => s.regenerate);
@@ -182,6 +194,18 @@ export default function Chat() {
                         text={msg.text}
                         onCite={(key) => openSources(msg.citations ?? [], key)}
                       />
+                    ) : agentSteps.length > 0 ? (
+                      <ul className="space-y-1 text-stone-400">
+                        {agentSteps.map((s, si) => (
+                          <li key={si} className="flex items-center gap-2">
+                            <span aria-hidden className="text-gold">
+                              {s.status === "done" ? "✓" : "…"}
+                            </span>
+                            {stepLabel(s.tool)}
+                            {s.status === "started" ? <ThinkingDots /> : null}
+                          </li>
+                        ))}
+                      </ul>
                     ) : (
                       <p className="flex items-center gap-2 text-stone-400">
                         Consulting the statutes <ThinkingDots />
@@ -230,11 +254,15 @@ export default function Chat() {
                       className="mt-1 cursor-pointer text-xs font-medium text-stone-500 transition-colors hover:text-gold-light"
                     >
                       {(() => {
-                        const laws = msg.citations.filter((c) => c.kind !== "document").length;
-                        const files = msg.citations.length - laws;
-                        return files > 0
-                          ? `Sources · ${laws} law · ${files} your file${files > 1 ? "s" : ""} →`
-                          : `Sources · ${msg.citations.length} cited sections →`;
+                        const laws = msg.citations.filter((c) => c.kind === "statute").length;
+                        const cases = msg.citations.filter((c) => c.kind === "case").length;
+                        const files = msg.citations.filter((c) => c.kind === "document").length;
+                        const parts = [
+                          laws > 0 ? `${laws} law` : null,
+                          cases > 0 ? `${cases} case${cases > 1 ? "s" : ""}` : null,
+                          files > 0 ? `${files} your file${files > 1 ? "s" : ""}` : null,
+                        ].filter(Boolean);
+                        return `Sources · ${parts.join(" · ")} →`;
                       })()}
                     </button>
                   ) : null}
@@ -249,6 +277,14 @@ export default function Chat() {
                   You have reached today&apos;s free answer limit.{" "}
                   <a href="/pricing" className="font-medium underline">
                     Upgrade for unlimited answers
+                  </a>
+                  .{" "}
+                </>
+              ) : agentLocked ? (
+                <>
+                  Deep research needs Starter or above.{" "}
+                  <a href="/pricing" className="font-medium underline">
+                    See plans
                   </a>
                   .{" "}
                 </>
@@ -342,6 +378,24 @@ export default function Chat() {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="m21.4 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
               </svg>
+            </button>
+            <button
+              onClick={() => setAgentMode(!agentMode)}
+              disabled={pending}
+              aria-pressed={agentMode}
+              title={
+                agentMode
+                  ? "Deep research on: the agent checks statutes, case law, and your files"
+                  : "Deep research off: switch on for statutes plus case law (Starter and up)"
+              }
+              aria-label="Toggle deep research"
+              className={`shrink-0 rounded-md px-2.5 py-2 text-xs font-semibold transition-colors disabled:opacity-40 ${
+                agentMode
+                  ? "bg-gold/15 text-gold-light hover:bg-gold/25"
+                  : "text-stone-400 hover:bg-stone-800/60 hover:text-stone-100"
+              }`}
+            >
+              Deep research
             </button>
             <button
               onClick={() => setShowLibrary((v) => !v)}
