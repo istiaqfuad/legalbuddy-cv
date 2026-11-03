@@ -15,12 +15,13 @@ import { subscriptionActive } from "@/lib/stripe";
 const UPSTREAM_TIMEOUT_MS = 300_000;
 const GENERIC_ERROR = "The assistant is unavailable right now. Please try again in a moment.";
 
-/** Tool-step budget per plan: Starter tastes the loop, paid tiers run it.
- * Only a current subscription unlocks it; a lapsed paid plan is Lite. */
+/** Tool-call budget per plan: Starter tastes the loop (small model,
+ * tight leash), paid tiers run it longer. Only a current subscription
+ * unlocks it; a lapsed paid plan is Lite. */
 function stepBudget(plan: string, status: string | null): number | null {
   if (!subscriptionActive(status)) return null;
-  if (plan === "starter") return 4;
-  if (plan === "professional" || plan === "business") return 8;
+  if (plan === "starter") return 3;
+  if (plan === "professional" || plan === "business") return 6;
   return null;
 }
 

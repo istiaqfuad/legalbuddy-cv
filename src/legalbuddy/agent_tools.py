@@ -155,7 +155,9 @@ def build_tools(collector: Collector, user_id: str | None = None,
         rights, and duties. Returns numbered [n] excerpts to cite."""
         before = len(collector.citations)
         try:
-            hits = chat_mod.retrieve(query, limit=6)
+            # Small per-tool budget: the loop may call several tools and
+            # citations merge, so each call returns few, high-precision hits.
+            hits = chat_mod.retrieve(query, limit=4)
         except Exception:
             return "Statute search is unavailable right now.", []
         text = _statute_lines(hits, collector)
@@ -177,8 +179,8 @@ def build_tools(collector: Collector, user_id: str | None = None,
             # NB: called store_search_cases because this tool's own name
             # (search_cases) shadows the store import inside build_tools.
             hits = store_search_cases(make_client(), dense_q, sparse_q,
-                                      query_filter=filt, limit=20)
-            hits.points = rerank_points(query, hits.points, 5)
+                                      query_filter=filt, limit=12)
+            hits.points = rerank_points(query, hits.points, 3)
         except Exception:
             return "Case search is unavailable right now.", []
         text = _case_lines(hits, collector)
@@ -196,7 +198,7 @@ def build_tools(collector: Collector, user_id: str | None = None,
             [Dn] excerpts to cite."""
             before = len(collector.citations)
             try:
-                hits = chat_mod.retrieve_docs(query, user_id, doc_ids, limit=6)
+                hits = chat_mod.retrieve_docs(query, user_id, doc_ids, limit=4)
             except Exception:
                 return "File search is unavailable right now.", []
             text = _doc_lines(hits, collector)

@@ -29,13 +29,24 @@ real shadowing hazard: the store import is aliased to
 
 ## Agent (`src/legalbuddy/agent.py`)
 
-`create_react_agent` with the same Muse Spark model, a system prompt
-that demands tool-first grounding with exact markers, and an
-`AsyncPostgresSaver`-style sync `PostgresSaver` checkpointer on Neon
-keyed by `agent:{conversation_id}`. First run in a conversation seeds
-the thread from the shared memory store, so agent mode continues
-discussions started in simple RAG. Threads are per-request savers
-(one connection each); DDL runs once per process.
+`create_react_agent` with a small Meta-hosted model (`_agent_client()`:
+`AGENT_MODEL`/`AGENT_BASE_URL`/`AGENT_API_KEY`, no redeploy to switch),
+a system prompt that demands tool-first grounding with exact markers,
+and a sync `PostgresSaver` checkpointer on Neon keyed by
+`agent:{conversation_id}`. First run in a conversation seeds the thread
+from the shared memory store, so agent mode continues discussions
+started in simple RAG. Threads are per-request savers (one connection
+each); DDL runs once per process. Free-tier chat stays on
+`muse-spark-open-1026`; only the agent reads the `AGENT_*` vars.
+
+Model note: Glimmer is the intended small model, but it 404s on the
+current Meta key (absent from `/models`, all ids probed), so the
+default is `muse-wonder-1.0`, which passed a native tool-call probe.
+Small models over-search and narrate: the loop is bounded in code
+(`recursion_limit = 2*steps + 2`, per-tool limits 4/3/4), citations
+are hard-capped at 16 by score with dangling markers stripped, and
+the prompt bans narration. Residual roughness vs Spark is the known
+trade for keeping agentic traffic off the hackathon key.
 
 Events mirror `stream_answer` plus `step` (`started`/`done` with the
 tool name). Final text is buffered and replayed as tokens after `meta`

@@ -30,7 +30,7 @@ class _FakeAgent:
 
 
 def _run(monkeypatch, script, **kw):
-    monkeypatch.setenv("BASETEN_API_KEY", "test")
+    monkeypatch.setenv("META_API_KEY", "test")
     monkeypatch.setattr(agent_mod, "_checkpointer", _fake_saver)
     monkeypatch.setattr(agent_mod, "create_react_agent", lambda *a, **k: _FakeAgent(script))
     monkeypatch.setattr(agent_mod, "build_tools", lambda *a, **k: [])

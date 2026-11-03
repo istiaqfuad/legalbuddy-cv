@@ -45,7 +45,36 @@ states, (2) your interpretation, (3) recommended next steps. Reply in \
 the same language as the question (English or Bangla). \
 Work efficiently: search statutes first, then cases for precedent, then \
 the user's files when they mention their matter. Never call a tool with \
-an empty query, and stop searching once the evidence answers the question."""
+an empty query, and stop searching once the evidence answers the question. \
+Cite at most 8 excerpts total. Output ONLY the final structured answer: \
+never narrate your searches or reasoning, never echo tool output, never \
+ask the user a question."""
+
+
+# Agent model: a small Meta-hosted model keeps agentic traffic off the
+# hackathon-scoped Baseten key. The free-tier chat path stays on
+# muse-spark-open-1026 (see chat.CHAT_MODEL); only the agent reads these.
+# Glimmer is the intended model once Meta provisions it on the key
+# (currently 404); Wonder is the working small model verified with
+# native tool calls.
+AGENT_MODEL_DEFAULT = "muse-wonder-1.0"
+AGENT_BASE_URL_DEFAULT = "https://api.meta.ai/v1"
+
+
+def _agent_client():
+    """Chat model for the ReAct loop, env-overridable without redeploy."""
+    return ChatOpenAI(
+        model=os.environ.get("AGENT_MODEL", AGENT_MODEL_DEFAULT),
+        base_url=os.environ.get("AGENT_BASE_URL", AGENT_BASE_URL_DEFAULT),
+        api_key=os.environ.get("AGENT_API_KEY", os.environ.get("META_API_KEY", "")),
+        max_tokens=chat_mod.MAX_TOKENS,
+        temperature=0.1,
+    )
+
+
+# Hard ceiling on merged citations (see run_agent): the sidebar stays
+# readable even when a small model over-searches.
+MAX_CITATIONS = 16
 
 
 _setup_done = False
@@ -94,13 +123,14 @@ def run_agent(question: str, conversation_id: str | None = None,
     """
     collector = Collector()
     tools = build_tools(collector, user_id=user_id, doc_ids=doc_ids)
-    model = ChatOpenAI(model=chat_mod.CHAT_MODEL, api_key=os.environ["BASETEN_API_KEY"],
-                       base_url=chat_mod.BASE_URL, max_tokens=chat_mod.MAX_TOKENS,
-                       temperature=0.1)
+    model = _agent_client()
     thread_id = (f"agent:{conversation_id}" if conversation_id
                  else f"agent:once:{uuid.uuid4().hex}")
+    # Approximate round budget: one agent→tools round costs two graph
+    # steps, plus the final answer. Small models ignore "stop" prompts,
+    # so the loop is bounded here, not by instruction.
     config = {"configurable": {"thread_id": thread_id},
-              "recursion_limit": 2 * max_tool_calls + 4}
+              "recursion_limit": 2 * max_tool_calls + 2}
     final_text = ""
     try:
         with _checkpointer() as saver:
@@ -147,6 +177,23 @@ def run_agent(question: str, conversation_id: str | None = None,
             record_turn(conversation_id, question, text)
         yield ("done", chat_mod.Answer(text=text, citations=[]))
         return
+    # Hard ceiling: small models over-search, and a 30-card sidebar is
+    # noise. Keep the best by score; unmapped markers are stripped from
+    # the text so no dangling [9] survives.
+    kept = sorted(collector.citations, key=lambda c: c.get("score", 0),
+                  reverse=True)[:MAX_CITATIONS]
+    kept_ids = {id(c) for c in kept}
+    dropped = [c for c in collector.citations if id(c) not in kept_ids]
+    if dropped:
+        drop_markers = set()
+        for c in dropped:
+            kind, ref = c.get("kind", "statute"), c.get("ref", 0)
+            drop_markers.add(f"[C{ref}]" if kind == "case"
+                            else f"[D{ref}]" if kind == "document"
+                            else f"[{ref}]")
+        for m in drop_markers:
+            final_text = final_text.replace(m, "")
+    collector.citations = [c for c in collector.citations if id(c) in kept_ids]
     if not final_text:
         final_text = "The evidence is above, but I could not compose an answer."
     citations = [chat_mod.Citation(
