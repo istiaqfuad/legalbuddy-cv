@@ -15,8 +15,6 @@ const TIERS: Array<{
   price: string;
   per: string;
   badge?: string;
-  /** Coming-soon tiers render a static label; no checkout, no plan change. */
-  soon?: boolean;
   blurb: string;
   points: string[];
 }> = [
@@ -54,14 +52,12 @@ const TIERS: Array<{
     name: "Business",
     price: "~$19.99",
     per: "per month",
-    badge: "Coming soon",
-    soon: true,
-    blurb: "Company plans are on the way. What is coming:",
+    badge: "New",
+    blurb: "Renewals and documents, tracked in one place.",
     points: [
-      "Everything in Professional",
-      "Contract drafting",
-      "Compliance tracking",
-      "Company workspace",
+      "Compliance dashboard and deadline tracking",
+      "Private vault for licences and contracts",
+      "More features are coming soon",
     ],
   },
 ];
@@ -183,7 +179,6 @@ export default function PricingPage() {
    * modal for anything that takes value away. */
   function choose(id: PlanId) {
     if (busy || pending) return;
-    if (TIERS[RANK[id]].soon) return;
     if (RANK[id] > RANK[plan]) {
       void changePlan(id as Exclude<PlanId, "lite">);
       return;
@@ -261,10 +256,6 @@ export default function PricingPage() {
                 ) : current ? (
                   <span className="mt-5 rounded-md border border-stone-700 px-4 py-2 text-center text-sm text-stone-400">
                     Current plan
-                  </span>
-                ) : t.soon ? (
-                  <span className="mt-5 rounded-md border border-stone-700 px-4 py-2 text-center text-sm text-stone-400">
-                    Coming soon
                   </span>
                 ) : !signedIn ? (
                   <Link

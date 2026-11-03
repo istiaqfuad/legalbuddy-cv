@@ -23,9 +23,6 @@ export async function POST(req: Request) {
   }
   // Business is roadmap, not inventory: never open a Checkout Session
   // for it, even by direct POST.
-  if (plan === "business") {
-    return Response.json({ detail: "Business plans are coming soon." }, { status: 400 });
-  }
   let priceId: string;
   try {
     priceId = priceIdFor(plan);
