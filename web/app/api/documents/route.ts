@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { internalBase, internalHeaders } from "@/lib/internal-api";
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
@@ -39,13 +40,18 @@ export async function POST(req: Request) {
   if (file.size > MAX_UPLOAD_BYTES) {
     return Response.json({ detail: "Files must be under 10 MB." }, { status: 400 });
   }
-  const base = process.env.API_INTERNAL_URL ?? "http://localhost:8000";
+  const base = internalBase();
   try {
     const forward = new FormData();
     forward.append("file", file, file.name);
     const upstream = await fetch(
       `${base}/api/documents?user_id=${encodeURIComponent(session.user.id)}`,
-      { method: "POST", body: forward, signal: AbortSignal.timeout(180_000) },
+      {
+        method: "POST",
+        headers: internalHeaders(),
+        body: forward,
+        signal: AbortSignal.timeout(180_000),
+      },
     );
     const data = await upstream.json().catch(() => null);
     if (!upstream.ok || !data?.doc_id) {

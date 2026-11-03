@@ -3,12 +3,13 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import Chat from "@/components/chat/Chat";
 import SiteHeader from "@/components/site-header";
+import { internalBase } from "@/lib/internal-api";
 
 // Live index status must never be prerendered at build time.
 export const dynamic = "force-dynamic";
 
 async function getIndexStatus(): Promise<{ live: boolean }> {
-  const base = process.env.API_INTERNAL_URL ?? "http://localhost:8000";
+  const base = internalBase();
   try {
     const res = await fetch(`${base}/health`, {
       cache: "no-store",

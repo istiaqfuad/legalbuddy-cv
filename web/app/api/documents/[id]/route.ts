@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { internalBase, internalHeaders } from "@/lib/internal-api";
 
 /** Delete a document: metadata row (links cascade) plus its vectors. */
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -16,11 +17,15 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
       return Response.json({ detail: "Document not found." }, { status: 404 });
     }
     await getDb().query("DELETE FROM documents WHERE id = $1", [id]);
-    const base = process.env.API_INTERNAL_URL ?? "http://localhost:8000";
+    const base = internalBase();
     try {
       await fetch(
         `${base}/api/documents/${encodeURIComponent(id)}?user_id=${encodeURIComponent(session.user.id)}`,
-        { method: "DELETE", signal: AbortSignal.timeout(60_000) },
+        {
+          method: "DELETE",
+          headers: internalHeaders(),
+          signal: AbortSignal.timeout(60_000),
+        },
       );
     } catch (err) {
       // Metadata is gone; vectors without metadata are unreachable because

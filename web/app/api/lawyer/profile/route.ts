@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { internalBase, internalHeaders } from "@/lib/internal-api";
 import { LANGUAGES, PRACTICE_AREAS, profileText } from "@/lib/lawyers";
 
 /** The signed-in lawyer's own editable profile. */
@@ -87,10 +88,10 @@ export async function PATCH(req: Request) {
   const m = merged[0];
   if (m) {
     try {
-      const base = process.env.API_INTERNAL_URL ?? "http://localhost:8000";
+      const base = internalBase();
       const res = await fetch(`${base}/api/profile-embed`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: internalHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ text: profileText(m) || "lawyer" }),
         signal: AbortSignal.timeout(60_000),
       });

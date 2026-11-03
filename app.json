@@ -10,6 +10,10 @@
       "description": "How the Next.js routes reach the in-dyno FastAPI. Keep the default.",
       "value": "http://127.0.0.1:8000"
     },
+    "INTERNAL_API_TOKEN": {
+      "description": "Shared secret between the Next.js server and FastAPI (frontend-only API access).",
+      "generator": "secret"
+    },
     "FRONTEND_URL": {
       "description": "Public origin of the app (backend CORS).",
       "value": "https://legalbuddy.irflab.tech"
