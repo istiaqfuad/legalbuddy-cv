@@ -54,21 +54,30 @@ ask the user a question."""
 # Agent model: a small Meta-hosted model keeps agentic traffic off the
 # hackathon-scoped Baseten key. The free-tier chat path stays on
 # muse-spark-open-1026 (see chat.CHAT_MODEL); only the agent reads these.
-# Glimmer is the intended model once Meta provisions it on the key
-# (currently 404); Wonder is the working small model verified with
-# native tool calls.
-AGENT_MODEL_DEFAULT = "muse-wonder-1.0"
+# Glimmer is the intended small model once Meta provisions it on the
+# key (currently 404). Wonder works but costs $4/$20 per 1M; Spark 1.3
+# Standard ($1.25/$4.25) calls tools just as well, so it is the default.
+AGENT_MODEL_DEFAULT = "muse-spark-1.3"
 AGENT_BASE_URL_DEFAULT = "https://api.meta.ai/v1"
 
 
 def _agent_client():
-    """Chat model for the ReAct loop, env-overridable without redeploy."""
+    """Chat model for the ReAct loop, env-overridable without redeploy.
+
+    Per the Meta docs, reasoning models burn output tokens thinking
+    before every tool call, controlled by top-level ``reasoning_effort``
+    (none/minimal/low/medium/high/xhigh). The loop's thinking is
+    bounded work (pick a tool, read excerpts), so ``low`` keeps answers
+    fast and cheap; the evidence text, not deeper reasoning, is what
+    grounds the answer.
+    """
     return ChatOpenAI(
         model=os.environ.get("AGENT_MODEL", AGENT_MODEL_DEFAULT),
         base_url=os.environ.get("AGENT_BASE_URL", AGENT_BASE_URL_DEFAULT),
         api_key=os.environ.get("AGENT_API_KEY", os.environ.get("META_API_KEY", "")),
         max_tokens=chat_mod.MAX_TOKENS,
         temperature=0.1,
+        extra_body={"reasoning_effort": os.environ.get("AGENT_REASONING_EFFORT", "low")},
     )
 
 
