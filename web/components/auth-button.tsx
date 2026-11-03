@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { signOut, useSession } from "next-auth/react";
 
-/** Account control: avatar (photo or initial) opening a menu with
+/** Account control: avatar (photo or person glyph) opening a menu with
  * settings and sign-out. No name in the bar.
  */
 export default function AuthButton() {
@@ -55,8 +55,7 @@ export default function AuthButton() {
     );
   }
 
-  const label = session.user.name ?? session.user.email ?? "?";
-  const initial = label.trim().charAt(0).toUpperCase() || "?";
+  const label = session.user.name ?? session.user.email ?? "Account";
 
   async function saveName(e: React.FormEvent) {
     e.preventDefault();
@@ -104,8 +103,11 @@ export default function AuthButton() {
           // eslint-disable-next-line @next/next/no-img-element
           <img src={session.user.image} alt="" className="size-8 rounded-full object-cover" />
         ) : (
-          <span className="flex size-8 items-center justify-center rounded-full bg-gold text-sm font-bold text-ink">
-            {initial}
+          <span className="flex size-8 items-center justify-center rounded-full bg-stone-800 ring-1 ring-stone-700 ring-inset">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-stone-500" aria-hidden="true">
+              <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+              <circle cx="12" cy="7" r="4" />
+            </svg>
           </span>
         )}
       </button>

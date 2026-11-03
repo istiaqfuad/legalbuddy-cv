@@ -75,6 +75,10 @@ export const authOptions: NextAuthOptions = {
     },
     async jwt({ token, user, trigger, session }) {
       if (user?.id) token.uid = user.id;
+      // Google profile photo: a custom jwt callback replaces the default
+      // field copying, so carry the photo explicitly or session.user.image
+      // stays empty and every Google user falls back to the placeholder.
+      if (user?.image) token.picture = user.image;
       // Name edits go through `useSession().update()`: fold the new name
       // into the token so the header reflects it without re-login.
       if (trigger === "update") {
@@ -86,6 +90,9 @@ export const authOptions: NextAuthOptions = {
     async session({ session, token }) {
       if (session.user && typeof token.uid === "string") {
         session.user.id = token.uid;
+      }
+      if (session.user && typeof token.picture === "string" && token.picture) {
+        session.user.image = token.picture;
       }
       return session;
     },
