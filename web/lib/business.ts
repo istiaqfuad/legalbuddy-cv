@@ -11,6 +11,46 @@ import { subscriptionActive } from "@/lib/stripe";
  * verify.
  */
 
+/** Signed-in verified lawyer, else null. Handoff recipients must also
+ * be visible (Professional and current); owners only need the plan. */
+export async function verifiedLawyer(): Promise<{ id: string } | null> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return null;
+  try {
+    const rows = (await getDb().query("SELECT role, lawyer_status FROM users WHERE id = $1", [
+      session.user.id,
+    ])) as Array<{ role: string; lawyer_status: string }>;
+    const r = rows[0];
+    if (r?.role === "lawyer" && r?.lawyer_status === "verified") return { id: session.user.id };
+    return null;
+  } catch (err) {
+    console.error(`lawyer gate failed: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
+}
+
+/** A lawyer eligible to receive handoffs: verified and on a current
+ * Professional subscription (same bar as the public directory). */
+export async function handoffEligibleLawyer(lawyerId: string): Promise<boolean> {
+  try {
+    const rows = (await getDb().query(
+      `SELECT role, lawyer_status, plan, subscription_status FROM users WHERE id = $1`,
+      [lawyerId],
+    )) as Array<{ role: string; lawyer_status: string; plan: string; subscription_status: string | null }>;
+    const r = rows[0];
+    return (
+      !!r &&
+      r.role === "lawyer" &&
+      r.lawyer_status === "verified" &&
+      r.plan === "professional" &&
+      subscriptionActive(r.subscription_status ?? null)
+    );
+  } catch (err) {
+    console.error(`handoff eligibility failed: ${err instanceof Error ? err.message : err}`);
+    return false;
+  }
+}
+
 export interface DeadlineRow {
   id: string;
   title: string;

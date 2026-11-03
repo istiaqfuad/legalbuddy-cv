@@ -341,6 +341,67 @@ def suggest_doc_dates(doc_id: str,
     return extract_candidate_dates("\n".join(texts))
 
 
+class DocumentText(BaseModel):
+    doc_id: str
+    chunks: list[str]
+
+
+@app.get("/api/documents/text", response_model=DocumentText,
+         dependencies=[internal])
+def document_text(doc_id: str = Query(default="", max_length=64),
+                  user_id: str | None = Query(default=None, max_length=64)):
+    """Raw chunk texts for one document (scoped to the session user).
+
+    Powers the lawyer handoff file view and any other owner-consented
+    sharing: capped so one file cannot flood the caller.
+    """
+    from legalbuddy.store import (DOCS_COLLECTION, ensure_docs_collection,
+                                  make_client)
+    from qdrant_client import models
+
+    user = _require_user(user_id)
+    if not doc_id:
+        raise HTTPException(status_code=400, detail="Choose a document first.")
+    client = make_client()
+    try:
+        ensure_docs_collection(client)
+        texts: list[str] = []
+        offset = None
+        while len(texts) < 40:
+            points, offset = client.scroll(
+                collection_name=DOCS_COLLECTION,
+                scroll_filter=models.Filter(must=[
+                    models.FieldCondition(
+                        key="user_id", match=models.MatchValue(value=user)),
+                    models.FieldCondition(
+                        key="doc_id", match=models.MatchValue(value=doc_id))]),
+                limit=64, offset=offset, with_payload=True,
+                with_vectors=False)
+            for p in points:
+                t = (p.payload or {}).get("text", "")
+                if t:
+                    texts.append(str(t))
+                    if len(texts) >= 40:
+                        break
+            if offset is None:
+                break
+    except HTTPException:
+        raise
+    except Exception:
+        log.exception("document text failed")
+        raise HTTPException(
+            status_code=502, detail="Could not read the document.") from None
+    total = sum(len(t) for t in texts)
+    if total > 30000:
+        cut: list[str] = []
+        for t in texts:
+            cut.append(t)
+            if sum(len(c) for c in cut) >= 30000:
+                break
+        texts = cut
+    return DocumentText(doc_id=doc_id, chunks=texts)
+
+
 @app.delete("/api/documents/{doc_id}", dependencies=[internal])
 def delete_document(doc_id: str,
                     user_id: str | None = Query(default=None, max_length=64)):

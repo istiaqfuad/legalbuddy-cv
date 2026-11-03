@@ -176,3 +176,23 @@ CREATE TABLE IF NOT EXISTS business_deadlines (
 );
 CREATE INDEX IF NOT EXISTS business_deadlines_user_idx
   ON business_deadlines(user_id, due_date);
+
+-- Advocate handoff: a business owner packages their facts and files
+-- for one verified lawyer. The lawyer answers in their own channel;
+-- this table tracks the request, not the advice.
+CREATE TABLE IF NOT EXISTS business_handoffs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  lawyer_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  subject TEXT NOT NULL,
+  details TEXT NOT NULL DEFAULT '',
+  doc_ids TEXT[] NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'accepted', 'closed')),
+  lawyer_note TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS business_handoffs_lawyer_idx
+  ON business_handoffs(lawyer_id, status);
+CREATE INDEX IF NOT EXISTS business_handoffs_owner_idx
+  ON business_handoffs(user_id, created_at DESC);

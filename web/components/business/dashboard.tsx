@@ -112,6 +112,13 @@ export default function BusinessDashboard() {
   const [pRegulated, setPRegulated] = useState(false);
   const [pCustomerData, setPCustomerData] = useState(false);
 
+  const [lawyers, setLawyers] = useState<Array<{ user_id: string; display_name: string; practice_areas: string[]; city: string | null }>>([]);
+  const [handoffs, setHandoffs] = useState<Array<{ id: string; subject: string; status: string; lawyer_name: string; created: string; lawyer_note: string }>>([]);
+  const [hLawyer, setHLawyer] = useState("");
+  const [hSubject, setHSubject] = useState("");
+  const [hDetails, setHDetails] = useState("");
+  const [hDocs, setHDocs] = useState<string[]>([]);
+
   const load = useCallback(async () => {
     try {
       const [dl, dc, pf, sn] = await Promise.all([
@@ -121,6 +128,12 @@ export default function BusinessDashboard() {
         fetch("/api/business/snapshot").then((r) => r.json()).catch(() => ({})),
       ]);
       if (sn.snapshot) setSnapshot(sn.snapshot);
+      const [dir, ho] = await Promise.all([
+        fetch("/api/lawyers").then((r) => r.json()).catch(() => ({})),
+        fetch("/api/business/handoffs").then((r) => r.json()).catch(() => ({})),
+      ]);
+      if (Array.isArray(dir.items)) setLawyers(dir.items);
+      if (Array.isArray(ho.handoffs)) setHandoffs(ho.handoffs);
       if (Array.isArray(dl.deadlines)) setDeadlines(dl.deadlines);
       if (Array.isArray(dc.documents)) setDocs(dc.documents);
       if (pf.profile) {
@@ -253,6 +266,42 @@ export default function BusinessDashboard() {
     setSuggestFor(null);
     setSuggestions([]);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function toggleHDoc(id: string) {
+    setHDocs((prev) => (prev.includes(id) ? prev.filter((d) => d !== id) : [...prev, id]));
+  }
+
+  async function sendHandoff(e: React.FormEvent) {
+    e.preventDefault();
+    if (!hLawyer || !hSubject.trim() || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/business/handoffs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lawyer_id: hLawyer,
+          subject: hSubject.trim(),
+          details: hDetails.trim(),
+          doc_ids: hDocs,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(typeof data?.detail === "string" ? data.detail : "Could not send the request.");
+      }
+      setHLawyer("");
+      setHSubject("");
+      setHDetails("");
+      setHDocs([]);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not send the request.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function saveProfile(e: React.FormEvent) {
@@ -486,6 +535,60 @@ export default function BusinessDashboard() {
             </button>
           </div>
         </form>
+      </section>
+      <section aria-label="Advocate handoff" className={cardCls}>
+        <h2 className="font-display text-lg text-stone-100">Ask an advocate</h2>
+        <p className="mt-1 text-sm leading-relaxed text-stone-400">
+          Package your facts and vault files for a verified lawyer. They read what you share
+          and continue the matter in their own channel; the dashboard only tracks the request.
+        </p>
+        <form onSubmit={sendHandoff} className="mt-4 grid gap-2">
+          <select value={hLawyer} onChange={(e) => setHLawyer(e.target.value)} required className={inputCls} aria-label="Lawyer">
+            <option value="">Choose a verified lawyer…</option>
+            {lawyers.map((l) => (
+              <option key={l.user_id} value={l.user_id}>
+                {l.display_name}
+                {l.practice_areas?.length ? ` — ${l.practice_areas.slice(0, 3).join(", ")}` : ""}
+                {l.city ? ` (${l.city})` : ""}
+              </option>
+            ))}
+          </select>
+          <input value={hSubject} onChange={(e) => setHSubject(e.target.value)} placeholder="Subject, e.g. Review supplier contract" maxLength={160} required className={inputCls} />
+          <textarea value={hDetails} onChange={(e) => setHDetails(e.target.value)} placeholder="The facts: what happened, what you need, dates that matter (optional)" maxLength={2000} rows={3} className={inputCls} />
+          {docs.length > 0 ? (
+            <fieldset>
+              <legend className="text-xs text-stone-500">Share files with the lawyer</legend>
+              <div className="mt-1 flex flex-wrap gap-2">
+                {docs.map((d) => (
+                  <label key={d.doc_id} className="flex cursor-pointer items-center gap-1.5 rounded-md border border-stone-800 px-2.5 py-1.5 text-xs text-stone-300">
+                    <input type="checkbox" checked={hDocs.includes(d.doc_id)} onChange={() => toggleHDoc(d.doc_id)} className="size-3.5 accent-[#c9a227]" />
+                    <span className="max-w-48 truncate">{d.filename}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          ) : null}
+          <div>
+            <button type="submit" disabled={!hLawyer || !hSubject.trim() || busy} className={goldBtn}>
+              {busy ? "Sending…" : "Send request"}
+            </button>
+          </div>
+        </form>
+        {handoffs.length > 0 ? (
+          <ul className="mt-4 space-y-2">
+            {handoffs.map((h) => (
+              <li key={h.id} className="flex flex-wrap items-center gap-2 rounded-md border border-stone-800 px-3 py-2.5 text-sm">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium text-stone-100">{h.subject}</p>
+                  <p className="mt-0.5 text-xs text-stone-500">
+                    {h.lawyer_name} · {h.created} · {h.status}
+                    {h.lawyer_note ? ` — ${h.lawyer_note}` : ""}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </section>
     </div>
   );

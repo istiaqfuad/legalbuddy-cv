@@ -216,3 +216,28 @@ def test_doc_dates_suggest(monkeypatch):
     body = resp.json()
     assert [r["date"] for r in body] == ["2026-06-30"]
     assert all(r["context"] for r in body)
+
+
+def test_doc_text_scoped_and_capped(monkeypatch):
+    """Shared file texts come from the owner's chunks only, capped."""
+    from types import SimpleNamespace
+
+    import legalbuddy.store as store_mod
+    pts = [SimpleNamespace(payload={"text": "clause " + str(i)}) for i in range(50)]
+
+    class FakeClient:
+        def scroll(self, **kwargs):
+            filt = kwargs["scroll_filter"]
+            keys = sorted(c.key for c in filt.must)
+            assert keys == ["doc_id", "user_id"]  # never cross-user
+            return (pts, None)
+
+    monkeypatch.setattr(store_mod, "make_client", lambda: FakeClient())
+    monkeypatch.setattr(store_mod, "ensure_docs_collection",
+                        lambda client, *a, **k: None)
+    resp = TestClient(api_mod.app).get("/api/documents/text",
+                                       params={"doc_id": "d1", "user_id": "u1"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["doc_id"] == "d1"
+    assert len(body["chunks"]) == 40  # capped, not the full 50
