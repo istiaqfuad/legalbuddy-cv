@@ -143,3 +143,36 @@ CREATE TABLE IF NOT EXISTS conversation_documents (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (conversation_id, document_id)
 );
+
+-- Business compliance dashboard (Business tier): one profile per owner,
+-- plus their tracked obligations. Deadlines are date records with
+-- citations; a deterministic rules helper (not the LLM) rolls recurring
+-- ones forward when they are marked done.
+CREATE TABLE IF NOT EXISTS business_profiles (
+  user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  business_name TEXT NOT NULL DEFAULT '',
+  business_type TEXT NOT NULL DEFAULT 'other' CHECK (business_type IN ('online_seller', 'shop', 'workshop', 'other')),
+  city TEXT NOT NULL DEFAULT '',
+  turnover_band TEXT NOT NULL DEFAULT 'unknown',
+  headcount_band TEXT NOT NULL DEFAULT 'unknown',
+  regulated_goods BOOLEAN NOT NULL DEFAULT FALSE,
+  holds_customer_data BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS business_deadlines (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'other' CHECK (category IN ('licence', 'tax', 'vat', 'labour', 'data', 'other')),
+  due_date DATE NOT NULL,
+  recurrence TEXT NOT NULL DEFAULT 'none' CHECK (recurrence IN ('none', 'monthly', 'quarterly', 'yearly')),
+  source_section TEXT NOT NULL DEFAULT '',
+  source_url TEXT NOT NULL DEFAULT '',
+  done BOOLEAN NOT NULL DEFAULT FALSE,
+  proof_doc_id TEXT REFERENCES documents(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS business_deadlines_user_idx
+  ON business_deadlines(user_id, due_date);
