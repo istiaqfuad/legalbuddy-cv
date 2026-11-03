@@ -1,0 +1,78 @@
+# Tag-gated release: push a v* tag -> backend + frontend tests run ->
+# the Heroku container image builds, pushes, and releases -> smoke test.
+# Plain pushes to any branch deploy nothing (see ci.yml). Tags are the
+# only path to production.
+#
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#   HEROKU_API_KEY  - Heroku account API key (Account Settings -> API Key).
+#                     Must belong to an account with deploy access to the app.
+#   HEROKU_APP_NAME - Heroku app name (e.g. legalbuddy).
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Never run two releases at once; queue them instead.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  REGISTRY_IMAGE: registry.heroku.com/${{ secrets.HEROKU_APP_NAME }}/web
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - run: pip install uv
+      - run: uv sync --frozen
+      - run: uv run pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npx --no-install tsc --noEmit
+      - run: npm run lint
+
+  deploy:
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to Heroku Container Registry
+        run: echo "${{ secrets.HEROKU_API_KEY }}" | docker login registry.heroku.com -u _ --password-stdin
+      - name: Build and push image
+        run: |
+          docker build -f Dockerfile.heroku -t "$REGISTRY_IMAGE" .
+          docker push "$REGISTRY_IMAGE"
+      - name: Install Heroku CLI
+        run: curl https://cli-assets.heroku.com/install.sh | sh
+      - name: Release to Heroku
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+        run: heroku container:release web -a "${{ secrets.HEROKU_APP_NAME }}"
+      - name: Smoke test
+        run: |
+          sleep 30
+          # Homepage serves (proves the release booted); the webhook must
+          # reject unsigned calls (proves the new code is live).
+          curl -fsS -o /dev/null --max-time 60 https://legalbuddy.irflab.tech/
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 \
+            -X POST https://legalbuddy.irflab.tech/api/billing/webhook -d '{}')
+          test "$code" = "400"
