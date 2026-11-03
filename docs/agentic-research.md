@@ -173,10 +173,26 @@ tools and nothing else changes.
   news" with publisher and date, link text "Read full report". News
   never overrides statutes — the prompt says so, and statute
   citations always come first in merged order.
-- Not chosen: Meta search grounding (Responses API only, while the
-  agent runs on Chat Completions; $0.0025/search; no domain
-  allowlisting), and Contributor-tier models (Meta may train on the
-  content).
+- Not chosen: Meta search grounding. Probed live on spark-1.3
+  (`POST /v1/responses`, `web_search`): it works (5 searches, 42
+  `url_citation`s), but it is Responses-API only while the agent runs
+  on Chat Completions, so adoption means migrating the whole loop
+  (tools, step streaming, checkpointer mapping). The probe also
+  showed why not: narrated progress messages leak into the answer,
+  and there is no domain allowlisting. Tavily gives the same recency
+  with the quality controls a legal product needs.
+- Contributor-tier models rejected: Meta may train on the content.
+
+## Swapping models
+
+Every model the app calls is env, not code. Chat (free tier):
+`CHAT_MODEL` + `CHAT_BASE_URL` (+ `CHAT_API_KEY`, else
+`BASETEN_API_KEY`). Deep research: `AGENT_MODEL` + `AGENT_BASE_URL`
+(+ `AGENT_API_KEY`, else `META_API_KEY`). Any OpenAI-compatible
+endpoint works; the agent needs tool calling on the other end, and
+`reasoning_effort` is only sent to meta.ai URLs (other providers
+reject unknown params). Restart the api container after changing
+either; the current values in `.env` reproduce today's behavior.
 
 ## Verification
 

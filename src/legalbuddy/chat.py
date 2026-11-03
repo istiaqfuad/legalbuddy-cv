@@ -37,8 +37,15 @@ from legalbuddy.store import (
     weighted_search,
 )
 
-CHAT_MODEL = "meta-models/muse-spark-open-1026"
-BASE_URL = "https://inference.baseten.co/v1"
+# Free-tier chat model. Any OpenAI-compatible chat model works here:
+# set CHAT_MODEL + CHAT_BASE_URL (+ CHAT_API_KEY, else BASETEN_API_KEY)
+# and restart. Defaults keep the hackathon Spark on Baseten.
+CHAT_MODEL = os.environ.get("CHAT_MODEL", "meta-models/muse-spark-open-1026")
+BASE_URL = os.environ.get("CHAT_BASE_URL", "https://inference.baseten.co/v1")
+
+
+def _chat_key() -> str:
+    return os.environ.get("CHAT_API_KEY") or os.environ["BASETEN_API_KEY"]
 # Reasoning models spend tokens thinking: keep headroom so content survives.
 MAX_TOKENS = 2048
 
@@ -91,7 +98,7 @@ class Answer:
 
 
 def _client() -> OpenAI:
-    return OpenAI(base_url=BASE_URL, api_key=os.environ["BASETEN_API_KEY"])
+    return OpenAI(base_url=BASE_URL, api_key=_chat_key())
 
 
 def retrieve(question: str, language: str | None = None,

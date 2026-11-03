@@ -246,9 +246,9 @@ def transcribe_images(images: list[bytes]) -> list[str]:
 
     from openai import OpenAI
 
-    from legalbuddy.chat import BASE_URL, CHAT_MODEL
+    from legalbuddy.chat import BASE_URL, CHAT_MODEL, _chat_key
 
-    client = OpenAI(base_url=BASE_URL, api_key=os.environ["BASETEN_API_KEY"])
+    client = OpenAI(base_url=BASE_URL, api_key=_chat_key())
     out: list[str] = []
     for i in range(0, len(images), VISION_BATCH):
         batch = images[i:i + VISION_BATCH]

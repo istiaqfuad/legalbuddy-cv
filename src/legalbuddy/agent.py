@@ -68,20 +68,25 @@ AGENT_BASE_URL_DEFAULT = "https://api.meta.ai/v1"
 def _agent_client():
     """Chat model for the ReAct loop, env-overridable without redeploy.
 
-    Per the Meta docs, reasoning models burn output tokens thinking
-    before every tool call, controlled by top-level ``reasoning_effort``
-    (none/minimal/low/medium/high/xhigh). The loop's thinking is
-    bounded work (pick a tool, read excerpts), so ``low`` keeps answers
-    fast and cheap; the evidence text, not deeper reasoning, is what
-    grounds the answer.
+    Any OpenAI-compatible tool-calling model works: set AGENT_MODEL +
+    AGENT_BASE_URL (+ AGENT_API_KEY, else META_API_KEY) and restart.
+
+    ``reasoning_effort`` is Meta-only (other providers reject unknown
+    params), so it is sent only to meta.ai endpoints. Per the Meta
+    docs it caps the thinking billed as output tokens on every tool
+    round; ``low`` is plenty for pick-a-tool, read-excerpts work.
     """
+    base_url = os.environ.get("AGENT_BASE_URL", AGENT_BASE_URL_DEFAULT)
+    extra: dict = {}
+    if "meta.ai" in base_url:
+        extra = {"reasoning_effort": os.environ.get("AGENT_REASONING_EFFORT", "low")}
     return ChatOpenAI(
         model=os.environ.get("AGENT_MODEL", AGENT_MODEL_DEFAULT),
-        base_url=os.environ.get("AGENT_BASE_URL", AGENT_BASE_URL_DEFAULT),
+        base_url=base_url,
         api_key=os.environ.get("AGENT_API_KEY", os.environ.get("META_API_KEY", "")),
         max_tokens=chat_mod.MAX_TOKENS,
         temperature=0.1,
-        extra_body={"reasoning_effort": os.environ.get("AGENT_REASONING_EFFORT", "low")},
+        extra_body=extra,
     )
 
 
