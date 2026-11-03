@@ -93,6 +93,16 @@ export default function BusinessDashboard() {
   const [suggestFor, setSuggestFor] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [suggestBusy, setSuggestBusy] = useState(false);
+  const [proofDoc, setProofDoc] = useState<string | null>(null);
+  const [snapshot, setSnapshot] = useState<{
+    overdue: number;
+    dueSoon: number;
+    open: number;
+    doneLast30: number;
+    vaultFiles: number;
+    gaps: Array<{ kind: string; label: string }>;
+    upcoming: Array<{ id: string; title: string; due_date: string; state: string; daysUntil: number }>;
+  } | null>(null);
 
   const [pName, setPName] = useState("");
   const [pType, setPType] = useState("other");
@@ -104,11 +114,13 @@ export default function BusinessDashboard() {
 
   const load = useCallback(async () => {
     try {
-      const [dl, dc, pf] = await Promise.all([
+      const [dl, dc, pf, sn] = await Promise.all([
         fetch("/api/business/deadlines").then((r) => r.json()),
         fetch("/api/documents").then((r) => r.json()),
         fetch("/api/business/profile").then((r) => r.json()),
+        fetch("/api/business/snapshot").then((r) => r.json()).catch(() => ({})),
       ]);
+      if (sn.snapshot) setSnapshot(sn.snapshot);
       if (Array.isArray(dl.deadlines)) setDeadlines(dl.deadlines);
       if (Array.isArray(dc.documents)) setDocs(dc.documents);
       if (pf.profile) {
@@ -147,6 +159,7 @@ export default function BusinessDashboard() {
           due_date: dueDate,
           recurrence,
           source_section: source.trim(),
+          proof_doc_id: proofDoc,
         }),
       });
       if (!res.ok) {
@@ -157,6 +170,7 @@ export default function BusinessDashboard() {
       setDueDate("");
       setSource("");
       setRecurrence("none");
+      setProofDoc(null);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the deadline.");
@@ -235,6 +249,7 @@ export default function BusinessDashboard() {
     setDueDate(s.date);
     setRecurrence("yearly");
     setSource(`Suggested from ${doc.filename}: check the original before relying on it.`);
+    setProofDoc(doc.doc_id);
     setSuggestFor(null);
     setSuggestions([]);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -293,18 +308,53 @@ export default function BusinessDashboard() {
           {error}
         </p>
       ) : null}
-      <section aria-label="Snapshot" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {[
-          { n: String(overdue.length), label: "Overdue" },
-          { n: String(dueSoon.length), label: "Due in 30 days" },
-          { n: String(open.length), label: "Tracked" },
-          { n: String(docs.length), label: "Vault files" },
-        ].map((s) => (
-          <div key={s.label} className="rounded-lg border border-stone-800 bg-stone-900/40 px-4 py-3">
-            <p className="font-display text-2xl text-stone-100">{s.n}</p>
-            <p className="text-xs text-stone-400">{s.label}</p>
+      <section aria-label="Monthly snapshot" className={cardCls}>
+        <h2 className="font-display text-lg text-stone-100">This month</h2>
+        <p className="mt-1 text-sm leading-relaxed text-stone-400">
+          Your records, summarized. Completed in the last 30 days, what is due next, and
+          which coverage gaps need attention.
+        </p>
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
+          {[
+            { n: String(snapshot?.overdue ?? overdue.length), label: "Overdue" },
+            { n: String(snapshot?.dueSoon ?? dueSoon.length), label: "Due in 30 days" },
+            { n: String(snapshot?.open ?? open.length), label: "Tracked" },
+            { n: String(snapshot?.doneLast30 ?? 0), label: "Done in 30 days" },
+            { n: String(snapshot?.vaultFiles ?? docs.length), label: "Vault files" },
+          ].map((s) => (
+            <div key={s.label} className="rounded-lg border border-stone-800 bg-stone-900/60 px-4 py-3">
+              <p className="font-display text-2xl text-stone-100">{s.n}</p>
+              <p className="text-xs text-stone-400">{s.label}</p>
+            </div>
+          ))}
+        </div>
+        {(snapshot?.gaps?.length ?? 0) > 0 ? (
+          <div className="mt-4">
+            <h3 className="text-sm font-semibold text-stone-200">Needs attention</h3>
+            <ul className="mt-2 space-y-1.5">
+              {snapshot!.gaps.map((g) => (
+                <li key={g.label} className="rounded-md border border-gold/30 bg-gold/5 px-3 py-2 text-sm text-stone-200">
+                  {g.label}
+                </li>
+              ))}
+            </ul>
           </div>
-        ))}
+        ) : null}
+        {(snapshot?.upcoming?.length ?? 0) > 0 ? (
+          <div className="mt-4">
+            <h3 className="text-sm font-semibold text-stone-200">Coming up</h3>
+            <ul className="mt-2 space-y-1.5">
+              {snapshot!.upcoming.map((u) => (
+                <li key={u.id} className="flex items-center justify-between gap-2 rounded-md border border-stone-800 px-3 py-2 text-sm">
+                  <span className="truncate text-stone-200">{u.title}</span>
+                  <span className="shrink-0 text-xs text-stone-500">
+                    {u.state === "overdue" ? `overdue by ${-u.daysUntil}d` : u.state === "due-soon" ? `in ${u.daysUntil}d` : u.due_date}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </section>
       <section aria-label="Deadlines" className={cardCls}>
         <h2 className="font-display text-lg text-stone-100">Deadlines</h2>
