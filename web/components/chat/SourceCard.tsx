@@ -21,18 +21,23 @@ export default function SourceCard({
 }) {
   const isDoc = citation.kind === "document";
   const isCase = citation.kind === "case";
+  const isNews = citation.kind === "news";
   const heading = isDoc
     ? citation.doc_filename || "Your file"
     : isCase
       ? citation.case_number || "Case study"
-      : citation.section_label && citation.section_label !== "?"
-        ? `Section ${citation.section_label}`
-        : "Provision";
+      : isNews
+        ? citation.title || "News report"
+        : citation.section_label && citation.section_label !== "?"
+          ? `Section ${citation.section_label}`
+          : "Provision";
   const sub = isDoc
     ? (citation.doc_page ? `Page ${citation.doc_page} · your file` : "Your file")
     : isCase
       ? (citation.court || "Decided case")
-      : `${citation.act_title} (${citation.act_no} of ${citation.act_year})`;
+      : isNews
+        ? [citation.publisher, citation.published_date].filter(Boolean).join(" · ") || "Recent reporting"
+        : `${citation.act_title} (${citation.act_no} of ${citation.act_year})`;
   return (
     <article
       id={`cite-card-${cardKey}`}
@@ -47,7 +52,7 @@ export default function SourceCard({
       >
         <span className="min-w-0">
           <span className="block truncate text-[13px] font-semibold text-stone-100">
-            [{isDoc ? `D${citation.ref}` : isCase ? `C${citation.ref}` : citation.ref}] {heading}
+            [{isDoc ? `D${citation.ref}` : isCase ? `C${citation.ref}` : isNews ? `N${citation.ref}` : citation.ref}] {heading}
           </span>
           <span className="block truncate text-[11px] text-stone-500">{sub}</span>
         </span>
@@ -75,7 +80,7 @@ export default function SourceCard({
               rel="noreferrer"
               className="mt-1.5 inline-block text-xs font-medium text-gold-light underline underline-offset-2 hover:text-gold"
             >
-              Full act on bdlaws
+              {isNews ? "Read full report" : "Full act on bdlaws"}
             </a>
           ) : null}
         </div>

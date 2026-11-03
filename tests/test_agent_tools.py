@@ -25,11 +25,12 @@ def test_renumber_merges_kinds_without_cascade():
         {"kind": "statute", "ref": 1},
         {"kind": "case", "ref": 1},
         {"kind": "document", "ref": 2},
+        {"kind": "news", "ref": 1},
     ]
     # Statute marker [2] must NOT be rewritten when a later mapping
     # turns another marker into [2]: single pass, no cascade.
-    out = _renumber("law [1] and [2], precedent [C1], file [D2]", citations)
-    assert out == "law [1] and [2], precedent [2], file [3]"
+    out = _renumber("law [1] and [2], precedent [C1], file [D2], press [N1]", citations)
+    assert out == "law [1] and [2], precedent [2], file [3], press [4]"
 
 
 def test_statute_tool_shapes_markers_and_artifacts(monkeypatch):
@@ -68,8 +69,55 @@ def test_case_tool_uses_hybrid_search_and_c_markers(monkeypatch):
     assert artifacts and artifacts[0]["kind"] == "case"
 
 
-def test_file_tool_absent_without_docs():
+def test_file_tool_absent_without_docs(monkeypatch):
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
     assert {t.name for t in build_tools(Collector())} == {"search_statutes", "search_cases"}
+
+
+def test_news_tool_gated_on_api_key(monkeypatch):
+    import legalbuddy.agent_tools as tools_mod
+
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    assert "search_recent_news" not in {t.name for t in build_tools(Collector())}
+    monkeypatch.setenv("TAVILY_API_KEY", "test")
+    assert "search_recent_news" in {t.name for t in build_tools(Collector())}
+
+
+def test_news_tool_marks_publishers_and_caps_calls(monkeypatch):
+    import legalbuddy.agent_tools as tools_mod
+
+    monkeypatch.setenv("TAVILY_API_KEY", "test")
+    seen = []
+
+    def fake_search(query, api_key, max_results=5):
+        seen.append(query)
+        return [
+            {"title": "Verdict delivered", "url": "https://www.thedailystar.net/x",
+             "content": "Court ruled.", "published_date": "2026-10-01"},
+            {"title": "No url here", "content": "Skipped."},
+        ]
+
+    monkeypatch.setattr(tools_mod, "tavily_search", fake_search)
+    collector = Collector()
+    tools = {t.name: t for t in build_tools(collector)}
+    text, artifacts = tools["search_recent_news"].func("recent verdict")
+    assert "[N1]" in text and "thedailystar.net" in text
+    assert artifacts[0]["kind"] == "news" and artifacts[0]["publisher"] == "www.thedailystar.net"
+    assert len(collector.citations) == 1  # url-less result skipped
+    # Second call works, third is refused by the per-run cap.
+    tools["search_recent_news"].func("again")
+    assert tools["search_recent_news"].func("third") == ("Already checked the news this run.", [])
+    assert len(seen) == 2
+
+
+def test_news_domains_cover_both_languages_and_official():
+    from legalbuddy.agent_tools import NEWS_DOMAINS
+
+    assert "thedailystar.net" in NEWS_DOMAINS
+    assert "prothomalo.com" in NEWS_DOMAINS
+    assert "bdlaws.minlaw.gov.bd" in NEWS_DOMAINS
+    assert "supremecourt.gov.bd" in NEWS_DOMAINS
+    assert all(" " not in d and "." in d for d in NEWS_DOMAINS)
 
 
 def test_file_tool_present_with_docs(monkeypatch):

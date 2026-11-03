@@ -91,6 +91,9 @@ class CitationOut(BaseModel):
     doc_page: int | None = None
     case_number: str = ""
     court: str = ""
+    title: str = ""
+    publisher: str = ""
+    published_date: str = ""
 
 
 class ChatResponse(BaseModel):
@@ -147,7 +150,8 @@ def _citation_out(c) -> CitationOut:
         section_label=c.section_label, section_title=c.section_title,
         excerpt=c.excerpt, source_url=c.source_url, score=c.score,
         kind=c.kind, doc_filename=c.doc_filename, doc_page=c.doc_page,
-        case_number=c.case_number, court=c.court,
+        case_number=c.case_number, court=c.court, title=c.title,
+        publisher=c.publisher, published_date=c.published_date,
     )
 
 

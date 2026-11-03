@@ -13,9 +13,10 @@ import { create } from "zustand";
 import { streamChat } from "@/lib/chat-api";
 import type { ChatMessage, Citation, Conversation, UserDocument } from "@/lib/types";
 
-/** Sidebar card key: `s1` for statute [1], `d1` for file [D1], `c1` for case [C1]. */
+/** Sidebar card key: `s1` for statute [1], `d1` for file [D1],
+ * `c1` for case [C1], `n1` for news [N1]. */
 export function citationKey(c: Citation): string {
-  return `${c.kind === "document" ? "d" : c.kind === "case" ? "c" : "s"}${c.ref}`;
+  return `${c.kind === "document" ? "d" : c.kind === "case" ? "c" : c.kind === "news" ? "n" : "s"}${c.ref}`;
 }
 
 async function saveMessage(

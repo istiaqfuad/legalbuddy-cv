@@ -15,6 +15,7 @@ function stepLabel(tool: string): string {
   if (tool === "search_statutes") return "Searching the statutes";
   if (tool === "search_cases") return "Searching decided cases";
   if (tool === "search_user_files") return "Searching your files";
+  if (tool === "search_recent_news") return "Checking recent news";
   return `Running ${tool}`;
 }
 
@@ -256,10 +257,12 @@ export default function Chat() {
                       {(() => {
                         const laws = msg.citations.filter((c) => c.kind === "statute").length;
                         const cases = msg.citations.filter((c) => c.kind === "case").length;
+                        const news = msg.citations.filter((c) => c.kind === "news").length;
                         const files = msg.citations.filter((c) => c.kind === "document").length;
                         const parts = [
                           laws > 0 ? `${laws} law` : null,
                           cases > 0 ? `${cases} case${cases > 1 ? "s" : ""}` : null,
+                          news > 0 ? `${news} news` : null,
                           files > 0 ? `${files} your file${files > 1 ? "s" : ""}` : null,
                         ].filter(Boolean);
                         return `Sources · ${parts.join(" · ")} →`;

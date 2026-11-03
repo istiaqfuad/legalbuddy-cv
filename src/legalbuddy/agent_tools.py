@@ -14,6 +14,10 @@ collector, so concurrent conversations can never share numbering.
 
 from __future__ import annotations
 
+import json
+import logging
+import os
+import urllib.request
 from dataclasses import dataclass, field
 
 from langchain_core.tools import tool
@@ -29,6 +33,30 @@ from legalbuddy.store import (
 )
 
 
+# Bangladesh sources for recent scenarios: national dailies in both
+# languages, wires with Dhaka coverage, and the official publishers of
+# new law (bdlaws), verdicts (Supreme Court), and gazette notifications
+# (BG Press). Anything outside this list cannot ground an answer.
+NEWS_DOMAINS = [
+    # English newspapers
+    "thedailystar.net", "dhakatribune.com", "newagebd.net",
+    "thefinancialexpress.com.bd", "daily-sun.com", "bdnews24.com",
+    "bssnews.net",
+    # Bangla newspapers
+    "prothomalo.com", "jugantor.com", "kalerkantho.com",
+    "ittefaq.com.bd", "samakal.com",
+    # Wires with Dhaka bureaus (major events only)
+    "aljazeera.com", "bbc.com", "reuters.com",
+    # Official publishers: new acts, verdicts, gazette notifications
+    "bdlaws.minlaw.gov.bd", "supremecourt.gov.bd", "bgpress.gov.bd",
+    "lawmin.gov.bd",
+]
+
+# At most this many news searches per run: each one bills and adds a
+# network round-trip, and one recent-events check is usually enough.
+MAX_NEWS_CALLS = 2
+
+
 @dataclass
 class Collector:
     """Per-run citation sink: numbering, dedupe, final list."""
@@ -37,6 +65,8 @@ class Collector:
     _statute_n: int = 0
     _case_n: int = 0
     _doc_n: int = 0
+    _news_n: int = 0
+    news_calls: int = 0
     _seen: set = field(default_factory=set)
 
     def _add(self, citation: dict, key: tuple) -> dict | None:
@@ -84,7 +114,7 @@ class Collector:
             ("case", chunk_id),
         )
 
-    def add_doc(self, payload: dict, score: float, chunk_id: str) -> int | None:
+    def add_doc(self, payload: dict, score: float, chunk_id: str) -> dict | None:
         self._doc_n += 1
         return self._add(
             {
@@ -97,6 +127,24 @@ class Collector:
                 "score": float(score),
             },
             ("doc", chunk_id),
+        )
+
+    def add_news(self, title: str, publisher: str, published_date: str,
+                 url: str, excerpt: str) -> dict | None:
+        self._news_n += 1
+        return self._add(
+            {
+                "kind": "news",
+                "ref": self._news_n,
+                "title": title,
+                "publisher": publisher,
+                "published_date": published_date,
+                "source_url": url,
+                "excerpt": excerpt[:1200],
+                "chunk_id": url,
+                "score": 0.5,
+            },
+            ("news", url),
         )
 
 
@@ -141,6 +189,61 @@ def _doc_lines(hits, collector: Collector, start: int = 1) -> str:
         page = f", page {pl.get('page')}" if pl.get("page") else ""
         lines.append(f"[D{cited['ref']}] {pl.get('filename')}{page}\n{pl.get('text', '')[:1500]}")
     return "\n\n".join(lines)
+
+
+logger = logging.getLogger(__name__)
+
+
+def tavily_search(query: str, api_key: str, max_results: int = 5) -> list[dict]:
+    """Recent-news search, restricted to the curated domain allowlist.
+
+    ``topic="news"`` + ``time_range="month"`` keeps results to this
+    month's reporting; ``include_domains`` rejects everything outside
+    NEWS_DOMAINS server-side (the model never chooses sources).
+    Raises on transport/API errors; callers degrade to plain text.
+    """
+    body = json.dumps({
+        "api_key": api_key,
+        "query": query,
+        "topic": "news",
+        "time_range": "month",
+        "max_results": max_results,
+        "include_domains": NEWS_DOMAINS,
+        "include_answer": False,
+        "include_raw_content": False,
+    }).encode()
+    req = urllib.request.Request(
+        "https://api.tavily.com/search", data=body,
+        headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=25) as res:
+        payload = json.loads(res.read().decode("utf-8", "replace"))
+    return payload.get("results", []) or []
+
+
+def _news_lines(results: list[dict], collector: Collector) -> str:
+    lines: list[str] = []
+    for r in results:
+        url = str(r.get("url", ""))
+        if not url:
+            continue
+        title = str(r.get("title", "") or url)
+        publisher = url.split("/")[2] if "/" in url else url
+        cited = collector.add_news(
+            title, publisher, str(r.get("published_date", "") or ""),
+            url, str(r.get("content", "") or r.get("snippet", "")))
+        if cited is None:
+            continue
+        date = f" ({cited['published_date']})" if cited["published_date"] else ""
+        lines.append(f"[N{cited['ref']}] {title} — {publisher}{date}\n"
+                     f"{str(r.get('content', '') or r.get('snippet', ''))[:1200]}")
+    return "\n\n".join(lines)
+
+
+NEWS_PROMPT_ADDENDUM = """ A search_recent_news tool is also \
+available: use it ONLY for events after 2025, something happening \
+right now, or when statutes and cases found nothing. Its excerpts \
+cite as [N1], [N2], … — always name the publisher and date, and news \
+never overrides what the statutes say."""
 
 
 def build_tools(collector: Collector, user_id: str | None = None,
@@ -189,6 +292,31 @@ def build_tools(collector: Collector, user_id: str | None = None,
         return text, collector.citations[before:]
 
     tools = [search_statutes, search_cases]
+    if os.environ.get("TAVILY_API_KEY", ""):
+        @tool(response_format="content_and_artifact")
+        def search_recent_news(query: str) -> tuple[str, list[dict]]:
+            """Check this month's reporting for recent developments: new
+            amendments, just-delivered verdicts, ongoing cases in the
+            news. Use ONLY when the question is about events after 2025,
+            something happening right now, or the statutes and cases
+            found nothing. Sources are limited to major Bangladesh
+            newspapers and official publishers; returns [Nn] excerpts.
+            News never overrides the statutes."""
+            before = len(collector.citations)
+            if collector.news_calls >= MAX_NEWS_CALLS:
+                return "Already checked the news this run.", []
+            collector.news_calls += 1
+            try:
+                results = tavily_search(query, os.environ["TAVILY_API_KEY"])
+            except Exception as exc:
+                logger.warning("news search failed: %s", exc)
+                return "News search is unavailable right now.", []
+            text = _news_lines(results, collector)
+            if not text:
+                return "No recent reporting matched that query.", []
+            return text, collector.citations[before:]
+
+        tools.append(search_recent_news)
     if user_id and doc_ids:
         @tool(response_format="content_and_artifact")
         def search_user_files(query: str) -> tuple[str, list[dict]]:

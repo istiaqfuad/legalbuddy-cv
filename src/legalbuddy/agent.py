@@ -27,7 +27,11 @@ from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.prebuilt import create_react_agent
 
 from legalbuddy import chat as chat_mod
-from legalbuddy.agent_tools import Collector, build_tools
+from legalbuddy.agent_tools import (
+    NEWS_PROMPT_ADDENDUM,
+    Collector,
+    build_tools,
+)
 from legalbuddy.memory import _conninfo, recent_turns, record_turn
 
 logger = logging.getLogger(__name__)
@@ -132,6 +136,9 @@ def run_agent(question: str, conversation_id: str | None = None,
     """
     collector = Collector()
     tools = build_tools(collector, user_id=user_id, doc_ids=doc_ids)
+    prompt = AGENT_SYSTEM
+    if any(getattr(t, "name", "") == "search_recent_news" for t in tools):
+        prompt += NEWS_PROMPT_ADDENDUM
     model = _agent_client()
     thread_id = (f"agent:{conversation_id}" if conversation_id
                  else f"agent:once:{uuid.uuid4().hex}")
@@ -143,7 +150,7 @@ def run_agent(question: str, conversation_id: str | None = None,
     final_text = ""
     try:
         with _checkpointer() as saver:
-            agent = create_react_agent(model, tools, prompt=AGENT_SYSTEM,
+            agent = create_react_agent(model, tools, prompt=prompt,
                                        checkpointer=saver)
             if conversation_id:
                 try:
@@ -199,6 +206,7 @@ def run_agent(question: str, conversation_id: str | None = None,
             kind, ref = c.get("kind", "statute"), c.get("ref", 0)
             drop_markers.add(f"[C{ref}]" if kind == "case"
                             else f"[D{ref}]" if kind == "document"
+                            else f"[N{ref}]" if kind == "news"
                             else f"[{ref}]")
         for m in drop_markers:
             final_text = final_text.replace(m, "")
@@ -215,6 +223,8 @@ def run_agent(question: str, conversation_id: str | None = None,
         doc_filename=c.get("doc_filename", ""),
         doc_page=c.get("doc_page"),
         case_number=c.get("case_number", ""), court=c.get("court", ""),
+        title=c.get("title", ""), publisher=c.get("publisher", ""),
+        published_date=c.get("published_date", ""),
     ) for i, c in enumerate(collector.citations)]
     # Renumber markers to match the merged list (tools number per kind).
     renumbered = _renumber(final_text, collector.citations)
@@ -242,9 +252,11 @@ def _renumber(text: str, citations: list[dict]) -> str:
             mapping[f"[C{ref}]"] = f"[{i}]"
         elif kind == "document":
             mapping[f"[D{ref}]"] = f"[{i}]"
+        elif kind == "news":
+            mapping[f"[N{ref}]"] = f"[{i}]"
         else:
             mapping[f"[{ref}]"] = f"[{i}]"
-    return re.sub(r"\[(?:C|D)?\d+\]", lambda m: mapping.get(m.group(0), m.group(0)), text)
+    return re.sub(r"\[(?:C|D|N)?\d+\]", lambda m: mapping.get(m.group(0), m.group(0)), text)
 
 
 def _chunks(text: str, size: int = 24):

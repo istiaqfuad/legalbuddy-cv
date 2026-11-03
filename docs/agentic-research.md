@@ -147,6 +147,37 @@ to a "From case law" sidebar section like statutes and files.
 - Agent answers count toward the same daily quota as simple answers,
   so no new counters or tables.
 
+## Recent news (recency-gated, Tavily)
+
+The corpus ends at 2025, so questions about events after 2025, things
+happening right now, or new amendments have nothing to stand on. A
+fourth tool, `search_recent_news`, covers exactly that gap and nothing
+else: the prompt allows it only for post-2025 events, right-now
+questions, or when statutes and cases found nothing. It is built only
+when `TAVILY_API_KEY` is set; without the key the agent has three
+tools and nothing else changes.
+
+- Provider: Tavily (`topic="news"`, `time_range="month"`,
+  `include_domains` = the `NEWS_DOMAINS` allowlist). The domain gate
+  is enforced server-side by Tavily: the model never chooses sources.
+- Allowlist: English dailies (Daily Star, Dhaka Tribune, New Age,
+  Financial Express, Daily Sun, BDNews24, BSS), Bangla dailies
+  (Prothom Alo, Jugantor, Kaler Kantho, Ittefaq, Samakal), three wires
+  with Dhaka bureaus, and the official publishers (bdlaws, Supreme
+  Court, BG Press gazettes, law ministry). 20 domains, both languages
+  the product answers in.
+- Cost/latency guard: at most 2 news calls per run, 5 results each,
+  snippets only (no raw content). The loop's round budget already
+  covers the extra step.
+- Citations: kind `news`, markers `[N1]…`, sidebar section "In the
+  news" with publisher and date, link text "Read full report". News
+  never overrides statutes — the prompt says so, and statute
+  citations always come first in merged order.
+- Not chosen: Meta search grounding (Responses API only, while the
+  agent runs on Chat Completions; $0.0025/search; no domain
+  allowlisting), and Contributor-tier models (Meta may train on the
+  content).
+
 ## Verification
 
 `tests/test_agent.py` (loop wiring with a scripted graph: steps,

@@ -72,11 +72,15 @@ class Citation:
     score: float
     # Document citations: kind="document", ref renders as [Dn].
     # Case citations: kind="case", ref renders as [Cn].
+    # News citations: kind="news", ref renders as [Nn].
     kind: str = "statute"
     doc_filename: str = ""
     doc_page: int | None = None
     case_number: str = ""
     court: str = ""
+    title: str = ""
+    publisher: str = ""
+    published_date: str = ""
 
 
 @dataclass

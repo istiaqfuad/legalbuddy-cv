@@ -24,6 +24,7 @@ export default function SourcesSidebar() {
 
   const statutes = citations.filter((c) => c.kind === "statute");
   const cases = citations.filter((c) => c.kind === "case");
+  const news = citations.filter((c) => c.kind === "news");
   const docs = citations.filter((c) => c.kind === "document");
 
   const cards = (
@@ -47,6 +48,24 @@ export default function SourcesSidebar() {
         </p>
       ) : null}
       {cases.map((c) => {
+        const key = citationKey(c);
+        return (
+          <SourceCard
+            key={key}
+            cardKey={key}
+            citation={c}
+            open={expandedRef === key}
+            flash={flash === key}
+            onToggle={() => toggleSource(key)}
+          />
+        );
+      })}
+      {news.length > 0 ? (
+        <p className="pt-2 text-xs font-semibold tracking-wider text-stone-500 uppercase">
+          In the news · {news.length}
+        </p>
+      ) : null}
+      {news.map((c) => {
         const key = citationKey(c);
         return (
           <SourceCard

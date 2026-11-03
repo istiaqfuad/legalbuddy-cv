@@ -3,20 +3,21 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-/** remark plugin: turns [1], [D1], [C1] markers in plain text
+/** remark plugin: turns [1], [D1], [C1], [N1] markers in plain text
  * into jump links (outside existing links/code), so the renderer below
  * can make them sidebar buttons. Model output is prose, so markers only
  * appear where the model cited evidence.
  */
 function remarkCiteRefs() {
   const splitText = (value: string) => {
-    const parts = value.split(/(\[(?:C|D)?\d+\])/g);
+    const parts = value.split(/(\[(?:C|D|N)?\d+\])/g);
     if (parts.length < 2) return null;
     return parts.map((p) => {
-      const m = p.match(/^\[([CD]?)(\d+)\]$/);
+      const m = p.match(/^\[([CDN]?)(\d+)\]$/);
       const titles: Record<string, string> = {
         C: "Jump to cited case",
         D: "Jump to cited file excerpt",
+        N: "Jump to cited news report",
       };
       return m
         ? {
@@ -85,7 +86,7 @@ export default function AnswerMarkdown({
           </code>
         ),
         a: ({ href, title, children }) => {
-          const m = typeof href === "string" && href.match(/^#cite-([sdc])(\d+)$/);
+          const m = typeof href === "string" && href.match(/^#cite-([sdcn])(\d+)$/);
           if (m) {
             const key = `${m[1]}${m[2]}`;
             return (
