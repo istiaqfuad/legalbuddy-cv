@@ -24,8 +24,11 @@ import os
 
 from qdrant_client import QdrantClient, models
 
+from legalbuddy.case_parsing import CASE_PAYLOAD_INDEXES
+
 COLLECTION = os.environ.get("COLLECTION_NAME", "legal-statutes")
 DOCS_COLLECTION = os.environ.get("DOCS_COLLECTION_NAME", "user-documents")
+CASE_COLLECTION = os.environ.get("CASE_COLLECTION_NAME", "case_studies")
 DENSE_NAME = "denso"
 SPARSE_NAME = "sparso"
 DENSE_SIZE = 1024  # voyage-4 output dimension
@@ -207,6 +210,130 @@ def delete_doc_points(client: QdrantClient, user_id: str, doc_id: str,
         ])),
         wait=True,
     )
+
+
+def ensure_case_collection(client: QdrantClient,
+                           collection: str = CASE_COLLECTION) -> None:
+    """Create the case-studies collection on first use if missing.
+
+    Same vector contract as statutes (``denso`` 1024 cosine + ``sparso``
+    idf) plus the keyword indexes from
+    :data:`legalbuddy.case_parsing.CASE_PAYLOAD_INDEXES`, created up front
+    so ``case_type``-filtered research queries use indexed HNSW from the
+    first point. Unlike ``legal-statutes`` (pre-provisioned), this one is
+    app-managed: ``scripts/ingest_cases.py`` is the only writer.
+    """
+    try:
+        client.get_collection(collection)
+        return
+    except Exception:
+        pass  # missing (or unreachable here) — try to create below
+    client.create_collection(
+        collection_name=collection,
+        vectors_config={DENSE_NAME: models.VectorParams(size=DENSE_SIZE,
+                                                        distance=models.Distance.COSINE)},
+        sparse_vectors_config={SPARSE_NAME: models.SparseVectorParams(
+            modifier=models.Modifier.IDF)},
+    )
+    for field_name in CASE_PAYLOAD_INDEXES:
+        client.create_payload_index(
+            collection_name=collection, field_name=field_name,
+            field_schema=models.PayloadSchemaType.KEYWORD)
+
+
+def verify_case_collection(client: QdrantClient,
+                           collection: str = CASE_COLLECTION) -> list[str]:
+    """Contract violations for the live case-studies collection ([] = healthy)."""
+    try:
+        info = client.get_collection(collection)
+    except Exception as exc:
+        return [f"cannot read collection {collection!r}: {exc!r}"]
+    problems: list[str] = []
+    params = _val(_val(info, "config"), "params")
+    vectors = _val(params, "vectors") or {}
+    dense = vectors.get(DENSE_NAME) if isinstance(vectors, dict) else None
+    if dense is None:
+        problems.append(f"dense vector {DENSE_NAME!r} missing (named vectors required)")
+    else:
+        if _val(dense, "size") != DENSE_SIZE:
+            problems.append(f"dense vector {DENSE_NAME!r} size is {_val(dense, 'size')}, "
+                            f"expected {DENSE_SIZE} (voyage-4)")
+        if str(_val(dense, "distance")) != "Cosine":
+            problems.append(f"dense vector {DENSE_NAME!r} distance is {_val(dense, 'distance')}, "
+                            "expected Cosine")
+    sparse = _val(params, "sparse_vectors") or {}
+    sparso = sparse.get(SPARSE_NAME) if isinstance(sparse, dict) else None
+    if sparso is None:
+        problems.append(f"sparse vector {SPARSE_NAME!r} missing")
+    elif str(_val(sparso, "modifier")) != "idf":
+        problems.append(f"sparse vector {SPARSE_NAME!r} modifier is {_val(sparso, 'modifier')}, "
+                        "expected idf (Qdrant/bm25 pairing)")
+    schema = _val(info, "payload_schema") or {}
+    for field_name in CASE_PAYLOAD_INDEXES:
+        entry = schema.get(field_name) if isinstance(schema, dict) else None
+        got = _val(entry, "data_type") if entry is not None else None
+        if got is None:
+            problems.append(f"payload index missing: {field_name} (keyword)")
+        elif str(got) != "keyword":
+            problems.append(f"payload index {field_name} is {got}, expected keyword")
+    return problems
+
+
+def delete_case_points(client: QdrantClient, source_file: str,
+                       collection: str = CASE_COLLECTION) -> None:
+    """Delete one case file's points (before re-ingesting a changed file)."""
+    client.delete(
+        collection_name=collection,
+        points_selector=models.FilterSelector(filter=models.Filter(must=[
+            models.FieldCondition(key="source_file",
+                                  match=models.MatchValue(value=source_file)),
+        ])),
+        wait=True,
+    )
+
+
+def search_cases(client: QdrantClient, dense_query: list[float],
+                 sparse_query: tuple[list[int], list[float]],
+                 query_filter: models.Filter | None = None,
+                 limit: int = 8, prefetch_limit: int = 40,
+                 collection: str = CASE_COLLECTION):
+    """Hybrid RRF search over case studies, filter applied in prefetches.
+
+    ``query_filter`` is caller-built (e.g. ``case_type`` = Criminal Appeal):
+    applied inside both prefetches, never as a post-filter, so
+    out-of-scope cases cannot consume result slots.
+    """
+    s_idx, s_val = sparse_query
+    return client.query_points(
+        collection_name=collection,
+        prefetch=[
+            models.Prefetch(query=dense_query, using=DENSE_NAME, limit=prefetch_limit,
+                            filter=query_filter),
+            models.Prefetch(
+                query=models.SparseVector(indices=s_idx, values=s_val),
+                using=SPARSE_NAME, limit=prefetch_limit, filter=query_filter),
+        ],
+        query=models.FusionQuery(fusion=models.Fusion.RRF),
+        limit=limit,
+        with_payload=True,
+    )
+
+
+def build_case_filter(case_type: str | None = None,
+                      court: str | None = None,
+                      case_year: str | None = None,
+                      case_number: str | None = None) -> models.Filter | None:
+    """Metadata filter over the indexed case payload fields only."""
+    must: list[models.FieldCondition] = []
+    if case_type:
+        must.append(models.FieldCondition(key="case_type", match=models.MatchValue(value=case_type)))
+    if court:
+        must.append(models.FieldCondition(key="court", match=models.MatchValue(value=court)))
+    if case_year:
+        must.append(models.FieldCondition(key="case_year", match=models.MatchValue(value=case_year)))
+    if case_number:
+        must.append(models.FieldCondition(key="case_number", match=models.MatchValue(value=case_number)))
+    return models.Filter(must=must) if must else None
 
 
 def search_user_docs(client: QdrantClient, dense_query: list[float],

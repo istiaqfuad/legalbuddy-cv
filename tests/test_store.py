@@ -2,13 +2,17 @@
 
 from types import SimpleNamespace
 
+from legalbuddy.case_parsing import CASE_PAYLOAD_INDEXES, case_chunk_to_payload
 from legalbuddy.chunking import chunk_act
 from legalbuddy.store import (
     REQUIRED_PAYLOAD_INDEXES,
+    build_case_filter,
     build_filter,
+    search_cases,
     chunk_to_payload,
     dense_weight_for,
     is_bengali_script,
+    verify_case_collection,
     verify_collection,
     weighted_search,
 )
@@ -168,3 +172,75 @@ def test_build_filter_section_label():
     f = build_filter(section_label="302")
     keys = [c.key for c in f.must]
     assert "is_repealed" in keys and "section_label" in keys
+
+
+def _case_info(vectors=None, sparse=None, schema=None):
+    if vectors is None:
+        vectors = {"denso": SimpleNamespace(size=1024, distance="Cosine")}
+    if sparse is None:
+        sparse = {"sparso": SimpleNamespace(modifier="idf")}
+    if schema is None:
+        schema = {k: SimpleNamespace(data_type=v) for k, v in CASE_PAYLOAD_INDEXES.items()}
+    params = SimpleNamespace(vectors=vectors, sparse_vectors=sparse)
+    return SimpleNamespace(config=SimpleNamespace(params=params), payload_schema=schema)
+
+
+def test_verify_case_collection_ok():
+    assert verify_case_collection(_FakeClient(_case_info())) == []
+
+
+def test_verify_case_collection_flags_flat_legacy():
+    # Today's live case_studies: single unnamed vector, no sparse, no indexes.
+    info = _case_info(vectors={}, sparse={}, schema={})
+    problems = verify_case_collection(_FakeClient(info))
+    assert any("denso" in p for p in problems)
+    assert any("sparso" in p for p in problems)
+    assert any("case_type" in p for p in problems)
+
+
+def test_build_case_filter_case_type_only():
+    f = build_case_filter(case_type="Criminal Appeal")
+    keys = [c.key for c in f.must]
+    assert keys == ["case_type"]
+    assert build_case_filter() is None
+
+
+def test_case_payload_carries_indexed_fields():
+    chunk = SimpleNamespace(
+        case_type="Writ Petition", court="High Court Division",
+        case_number="Writ Petition No. 1 of 2020", case_year="2020",
+        language="en", source_file="wp.pdf", text="h",
+        case_id="wp.pdf", file_hash="abc", chunk_index=0, chunk_count=1,
+        char_start=0, char_end=1, page_start=1, page_end=1,
+        chunk_type="headnote", section_title="t", section_path="t",
+        parties="", disposition="", acts_cited=[], cases_cited=[],
+        origin="text", chunker_version="2",
+    )
+    payload = case_chunk_to_payload(chunk)
+    for key in CASE_PAYLOAD_INDEXES:
+        assert payload[key], key
+    assert payload["text"] == "h"
+
+
+def test_search_cases_uses_prefetch_rrf(monkeypatch):
+    from qdrant_client import models
+
+    import legalbuddy.store as store
+
+    seen = {}
+
+    class _Client:
+        def query_points(self, **kw):
+            seen.update(kw)
+            return SimpleNamespace(points=[])
+
+    store.search_cases(
+        _Client(), [0.1] * 1024, ([0], [0.5]),
+        query_filter=store.build_case_filter(case_type="Civil Revision"),
+        collection="case_studies_smoke",
+    )
+    assert seen["collection_name"] == "case_studies_smoke"
+    assert len(seen["prefetch"]) == 2
+    assert isinstance(seen["query"], models.FusionQuery)
+    using = {p.using for p in seen["prefetch"]}
+    assert using == {"denso", "sparso"}

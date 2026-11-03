@@ -47,7 +47,7 @@ from dataclasses import dataclass, field
 
 from legalbuddy.chunking import normalize_text
 
-CASE_CHUNKER_VERSION = "1"  # bump when chunk text/shape changes (forces re-ingest)
+CASE_CHUNKER_VERSION = "2"  # bump when chunk text/shape changes (forces re-ingest)
 
 # Pages with less extractable text than this are textless (scans, photos).
 PAGE_MIN_CHARS = 200
@@ -82,14 +82,36 @@ _NUMBERED_PARA = re.compile(r"^\s*\d{1,3}\.\s+\S")
 _CASE_NO = re.compile(
     r"\b((?:Civil Revision|Criminal Revision|Criminal Appeal|Civil Appeal|"
     r"Death Reference|Writ Petition|First Appeal|Miscellaneous Case|"
-    r"Jail Appeal|C\.?\s*R\.?)[\w\s./-]*?No\.?\s*[\w/\-\s]+?of\s*\d{4})",
+    r"Jail Appeal|Suo\s*Moto|C\.?\s*R\.?)[\w\s./-]*?No\.?\s*[\w/\-\s]+?of\s*\d{4})",
     re.IGNORECASE,
 )
+# Court anchors stay SHORT: the deciding division plus an optional
+# parenthetical jurisdiction. The old unbounded `[^\n]*` swallowed whole
+# body-text lines that merely began with the anchor words.
 _COURT_DIVISION = re.compile(
-    r"(High Court Division[^\n]*|Appellate Division[^\n]*)",
+    r"(High Court Division(?:\s*\([^()\n]{1,60}\))?|"
+    r"Appellate Division(?:\s*\([^()\n]{1,60}\))?)",
     re.IGNORECASE,
 )
-_COURT_TOP = re.compile(r"(Supreme Court of Bangladesh[^\n]*)", re.IGNORECASE)
+_COURT_TOP = re.compile(r"(Supreme Court of Bangladesh)", re.IGNORECASE)
+# Case-type aliases: one docket, several front-matter spellings.
+_CASE_TYPE_ALIASES = {
+    "criminal misc. case": "Criminal Miscellaneous Case",
+    "criminal misc case": "Criminal Miscellaneous Case",
+    "crl. misc. case": "Criminal Miscellaneous Case",
+    "crl misc case": "Criminal Miscellaneous Case",
+    "crl. rev": "Criminal Revision",
+    "crl rev": "Criminal Revision",
+    "w.p.": "Writ Petition",
+    "w. p.": "Writ Petition",
+}
+# Fallback labels when no docket number matched (abbrev-heavy front matter).
+_CASE_TYPE_FALLBACK = re.compile(
+    r"\b(Writ Petition|Civil Appeal|Criminal Appeal|Civil Revision|"
+    r"Criminal Revision|Death Reference|First Appeal|Jail Appeal|"
+    r"Miscellaneous Case|Civil Rule|Suo\s*Moto)\b",
+    re.IGNORECASE,
+)
 _DECISION_DATE = re.compile(
     r"(?:Heard and Judgment on|judgment on|Decided on|Dated)\s*[:.]?\s*"
     r"(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})",
@@ -383,17 +405,34 @@ def extract_case_metadata(text: str) -> dict:
             after = lines[i + 1] if i + 1 < len(lines) else ""
             parties = f"{before} vs {after}".strip()
             break
+    parts = re.split(r"\sNo\.\s*", number, flags=re.IGNORECASE)
+    raw_type = parts[0].strip() if len(parts) > 1 else ""
+    case_type = _CASE_TYPE_ALIASES.get(raw_type.lower(), raw_type)
+    if not case_type:
+        m = _CASE_TYPE_FALLBACK.search(sample)
+        if m:
+            cand = re.sub(r"\s+", " ", m.group(1)).strip()
+            case_type = _CASE_TYPE_ALIASES.get(cand.lower(), cand)
     year = ""
-    m = re.search(r"\bof\s*(\d{4})\s*$", number)
+    m = re.search(r"\bof\s*(\d{4})\s*$", number, re.IGNORECASE)
     if m:
         year = m.group(1)
+    if not year and date:
+        m = re.search(r"(\d{4})$", date)
+        if m and 1971 <= int(m.group(1)) <= 2030:
+            year = m.group(1)
+    if not year:
+        for m in re.finditer(r"\b((?:19|20)\d{2})\b", sample):
+            if 1971 <= int(m.group(1)) <= 2030:
+                year = m.group(1)
+                break
     return {
         "case_number": number,
         "court": court,
         "decision_date": date,
         "parties": parties,
         "case_year": year,
-        "case_type": number.split(" No.")[0].strip() if " No." in number else "",
+        "case_type": case_type,
     }
 
 

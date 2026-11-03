@@ -155,6 +155,21 @@ def test_retrieve_fusion_dispatch(monkeypatch):
     assert calls[-1] == "hybrid_search"  # unknown falls back to RRF
 
 
+def test_internal_token_gate(monkeypatch):
+    """When INTERNAL_API_TOKEN is set, /api/* needs the matching
+    x-internal-token header (only the Next.js server knows it)."""
+    monkeypatch.setenv("INTERNAL_API_TOKEN", "s3cr3t")
+    monkeypatch.setattr(chat_mod, "answer", lambda *a, **k: _fake_answer())
+    client = TestClient(api_mod.app)
+    assert client.post("/api/chat", json={"question": "hi"}).status_code == 403
+    assert client.post("/api/chat", json={"question": "hi"},
+                       headers={"x-internal-token": "wrong"}).status_code == 403
+    resp = client.post("/api/chat", json={"question": "hi"},
+                       headers={"x-internal-token": "s3cr3t"})
+    assert resp.status_code == 200
+    assert resp.json()["answer"].endswith("[1]")
+
+
 def test_health_ok(monkeypatch):
     class FakeClient:
         def get_collection(self, name):

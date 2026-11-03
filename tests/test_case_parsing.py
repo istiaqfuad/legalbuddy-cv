@@ -163,3 +163,41 @@ def test_build_case_header_marks_parts():
     )
     assert "(part 2/3)" in header
     assert "[Present:]" in header
+
+
+def test_court_capture_stays_short():
+    body = (
+        "High Court Division is governed, amongst others, by section 196D "
+        "read with section 196B of the Customs Act. For better appreciation "
+        "of law, these are quoted below:\nCivil Revision No. 1 of 2002"
+    )
+    meta = extract_case_metadata(body)
+    assert len(meta["court"]) <= 100, meta["court"]
+    assert "Customs Act" not in meta["court"]
+
+
+def test_court_keeps_parenthetical_jurisdiction():
+    meta = extract_case_metadata(HEADNOTE)
+    assert "high court division" in meta["court"].lower()
+
+
+def test_case_type_aliases_normalize():
+    meta = extract_case_metadata("Criminal Misc. Case No. 12 of 2020\nsee details")
+    assert meta["case_type"] == "Criminal Miscellaneous Case"
+    assert meta["case_year"] == "2020"
+
+
+def test_case_type_fallback_without_docket_number():
+    meta = extract_case_metadata("Heard today. This Writ Petition is disposed of.\nNo number here.")
+    assert meta["case_type"] == "Writ Petition"
+
+
+def test_case_year_falls_back_to_decision_date():
+    meta = extract_case_metadata("Heard and Judgment on 11.01.2017\nno docket number present")
+    assert meta["case_year"] == "2017"
+
+
+def test_uppercase_docket_number_parses():
+    meta = extract_case_metadata("CIVIL REVISION NO. 457 OF 2016\nHeard today.")
+    assert meta["case_type"] == "CIVIL REVISION"
+    assert meta["case_year"] == "2016"
