@@ -84,6 +84,20 @@ Return JSON only, exactly: {{"flags": [...]}}. Each flag:
 Rules: cite ONLY act+section pairs copied exactly from STATUTES above. If no listed statute governs a clause, omit that flag — never cite from memory, never invent sections, never cite the excerpt. If nothing is flaggable, return {{"flags": []}}."""
 
 
+def _norm_act(act: str) -> str:
+    """Formal-title tolerant: the model writes "The Contract Act, 1872
+    (IX of 1872)"; the index stores "The Contract Act, 1872"."""
+    s = re.sub(r"\s*\([^()]*\)\s*", " ", act or "")
+    return re.sub(r"\s+", " ", s).strip().casefold()
+
+
+def _norm_sec(sec: str) -> str:
+    """"Section 74", "Sec. 74" and "74" are the same citation."""
+    s = (sec or "").strip().casefold()
+    s = re.sub(r"^(section|sec\.?|§|no\.?)\s*", "", s)
+    return s.strip()
+
+
 def parse_review_flags(raw: str,
                        valid: set[tuple[str, str]]) -> list[dict]:
     """Parse the model JSON; keep only flags citing retrieved statutes."""
@@ -98,22 +112,27 @@ def parse_review_flags(raw: str,
     flags = data.get("flags") if isinstance(data, dict) else None
     if not isinstance(flags, list):
         return []
+    # Normalized lookup: formatting variance ("Section 74", formal act
+    # titles) still resolves, but only to a retrieved statute. Display
+    # keeps the stored originals so citations match the rest of the app.
+    normed = {(_norm_act(a), _norm_sec(s)): (a, s) for a, s in valid}
     out: list[dict] = []
     for f in flags:
         if not isinstance(f, dict):
             continue
         cite = f.get("citation") if isinstance(f.get("citation"), dict) else {}
-        key = (str(cite.get("act", "")).strip(),
-               str(cite.get("section", "")).strip())
-        if key not in valid:
+        key = (_norm_act(str(cite.get("act", ""))),
+               _norm_sec(str(cite.get("section", ""))))
+        if key not in normed:
             continue  # ungrounded citation: drop, never show
+        stored = normed[key]
         risk = str(f.get("risk", "")).lower()
         out.append({
             "title": str(f.get("title", ""))[:120],
             "clause": str(f.get("clause", ""))[:300],
             "risk": risk if risk in ("high", "medium", "low") else "medium",
             "explanation": str(f.get("explanation", ""))[:500],
-            "citation": {"act": key[0], "section": key[1]},
+            "citation": {"act": stored[0], "section": stored[1]},
         })
         if len(out) >= MAX_FLAGS:
             break

@@ -90,3 +90,17 @@ def test_prompt_lists_only_given_statutes():
         [{"ref": 1, "act_title": "The Contract Act, 1872",
           "section_label": "74", "excerpt": "compensation text"}])
     assert "The Contract Act, 1872" in prompt and "ONLY citable sources" in prompt
+
+
+def test_parse_accepts_formatting_variants_of_retrieved_cites():
+    """The model writes formal titles and "Section N"; both resolve to
+    the stored originals, while invented acts still drop."""
+    from legalbuddy.contract_review import parse_review_flags
+    valid = {("The Contract Act, 1872", "74")}
+    raw = ('{"flags": [{"title": "Penalty cap", "clause": "pay Tk 1000 per day", '
+           '"risk": "high", "explanation": "Capped.", '
+           '"citation": {"act": "The Contract Act, 1872 (IX of 1872)", "section": "Section 74"}}]}')
+    out = parse_review_flags(raw, valid)
+    assert out[0]["citation"] == {"act": "The Contract Act, 1872", "section": "74"}
+    bad = raw.replace("The Contract Act, 1872 (IX of 1872)", "The Made-Up Act, 1900 (I of 1900)")
+    assert parse_review_flags(bad, valid) == []
