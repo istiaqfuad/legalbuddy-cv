@@ -93,6 +93,10 @@ export default function BusinessDashboard() {
   const [suggestFor, setSuggestFor] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [suggestBusy, setSuggestBusy] = useState(false);
+  const [reviewFor, setReviewFor] = useState<string | null>(null);
+  const [reviewFlags, setReviewFlags] = useState<Array<{ title: string; clause: string; risk: string; explanation: string; citation: { act: string; section: string } }>>([]);
+  const [reviewNote, setReviewNote] = useState("");
+  const [reviewBusy, setReviewBusy] = useState(false);
   const [proofDoc, setProofDoc] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<{
     overdue: number;
@@ -255,6 +259,40 @@ export default function BusinessDashboard() {
     } finally {
       setSuggestBusy(false);
     }
+  }
+
+  async function reviewDoc(doc: VaultDoc) {
+    setReviewFor(doc.doc_id);
+    setReviewFlags([]);
+    setReviewNote("");
+    setReviewBusy(true);
+    try {
+      const res = await fetch("/api/business/contracts/review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ doc_id: doc.doc_id }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data) {
+        throw new Error(typeof data?.detail === "string" ? data.detail : "The review could not run.");
+      }
+      setReviewFlags(Array.isArray(data.flags) ? data.flags : []);
+      setReviewNote(typeof data.note === "string" ? data.note : "");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The review could not run.");
+      setReviewFor(null);
+    } finally {
+      setReviewBusy(false);
+    }
+  }
+
+  function sendFlagsToAdvocate(doc: VaultDoc) {
+    setHSubject(`Contract review: ${doc.filename}`);
+    setHDetails(
+      reviewFlags.map((f) => `- ${f.title} (${f.risk}): ${f.citation.act} §${f.citation.section}`).join("\n"),
+    );
+    setHDocs([doc.doc_id]);
+    document.getElementById("advocate-handoff")?.scrollIntoView({ behavior: "smooth" });
   }
 
   function trackSuggestion(doc: VaultDoc, s: Suggestion) {
@@ -481,7 +519,44 @@ export default function BusinessDashboard() {
                 <button onClick={() => void checkDates(doc)} disabled={suggestBusy} className={ghostBtn}>
                   {suggestBusy && suggestFor === doc.doc_id ? "Reading…" : "Check dates"}
                 </button>
+                <button onClick={() => void reviewDoc(doc)} disabled={reviewBusy} className={ghostBtn}>
+                  {reviewBusy && reviewFor === doc.doc_id ? "Reviewing…" : "Review contract"}
+                </button>
               </div>
+              {reviewFor === doc.doc_id && !reviewBusy ? (
+                <div className="mt-2 rounded bg-stone-900/60 px-2.5 py-2 text-xs">
+                  <p className="text-stone-500">
+                    Flags cite retrieved statutes only; this is information, not legal advice.
+                    Confirm anything that matters with an advocate.
+                  </p>
+                  {reviewFlags.length > 0 ? (
+                    <ul className="mt-2 space-y-2">
+                      {reviewFlags.map((f, i) => (
+                        <li key={i} className="rounded border border-stone-800 px-2.5 py-2">
+                          <p className="text-sm font-medium text-stone-100">
+                            {f.title}{" "}
+                            <span className="ml-1 rounded-full bg-stone-800 px-2 py-0.5 text-[11px] capitalize text-stone-400">
+                              {f.risk}
+                            </span>
+                          </p>
+                          {f.clause ? <p className="mt-1 italic text-stone-400">“{f.clause}”</p> : null}
+                          {f.explanation ? <p className="mt-1 leading-relaxed text-stone-300">{f.explanation}</p> : null}
+                          <p className="mt-1 text-stone-500">
+                            {f.citation.act} §{f.citation.section}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : reviewNote ? (
+                    <p className="mt-2 text-stone-300">{reviewNote}</p>
+                  ) : null}
+                  {reviewFlags.length > 0 ? (
+                    <button onClick={() => sendFlagsToAdvocate(doc)} className={`${ghostBtn} mt-2`}>
+                      Send flags to an advocate
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
               {suggestFor === doc.doc_id && suggestions.length > 0 ? (
                 <ul className="mt-2 space-y-1.5">
                   {suggestions.map((s) => (
@@ -536,7 +611,7 @@ export default function BusinessDashboard() {
           </div>
         </form>
       </section>
-      <section aria-label="Advocate handoff" className={cardCls}>
+      <section aria-label="Advocate handoff" id="advocate-handoff" className={cardCls}>
         <h2 className="font-display text-lg text-stone-100">Ask an advocate</h2>
         <p className="mt-1 text-sm leading-relaxed text-stone-400">
           Package your facts and vault files for a verified lawyer. They read what you share
