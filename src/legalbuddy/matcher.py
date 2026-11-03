@@ -181,6 +181,20 @@ def fetch_history(user_id: str, limit: int = 20) -> list[dict]:
     return [{"content": r[0]} for r in reversed(rows)]
 
 
+# Directory visibility is the Professional payoff: verified role alone
+# is not enough, the subscription must be current. Both the matcher
+# and the public directory route build their WHERE clause from these.
+VISIBLE_PLAN = "professional"
+VISIBLE_SUBSCRIPTION_STATUSES = ("active", "trialing")
+
+
+def _visibility_where() -> str:
+    statuses = ", ".join(f"'{s}'" for s in VISIBLE_SUBSCRIPTION_STATUSES)
+    return (f"u.role = 'lawyer' AND u.lawyer_status = 'verified' "
+            f"AND u.plan = '{VISIBLE_PLAN}' "
+            f"AND u.subscription_status IN ({statuses})")
+
+
 def fetch_candidates() -> list[dict]:
     """Verified lawyers with profiles, review aggregates, and bars."""
     import psycopg
@@ -188,7 +202,7 @@ def fetch_candidates() -> list[dict]:
     conn = psycopg.connect(_conninfo(pooled=True))
     try:
         rows = conn.execute(
-            """SELECT u.id, u.name, p.practice_areas, p.languages, p.city,
+            f"""SELECT u.id, u.name, p.practice_areas, p.languages, p.city,
                       p.bio, p.profile_embedding, v.bar_association,
                       COALESCE(SUM(r.rating), 0)::int AS rating_total,
                       COUNT(r.id)::int AS rating_count,
@@ -197,7 +211,7 @@ def fetch_candidates() -> list[dict]:
                JOIN lawyer_profiles p ON p.user_id = u.id
                LEFT JOIN lawyer_verifications v ON v.user_id = u.id
                LEFT JOIN lawyer_reviews r ON r.lawyer_id = u.id
-               WHERE u.role = 'lawyer' AND u.lawyer_status = 'verified'
+               WHERE {_visibility_where()}
                GROUP BY u.id, u.name, p.practice_areas, p.languages, p.city,
                         p.bio, p.profile_embedding, v.bar_association"""
         ).fetchall()

@@ -116,3 +116,10 @@ class TestClassifyFallback:
 
         out = m.classify_matters("1. hello", Boom(), "model")
         assert out == {"areas": [], "dominant": None, "summary": "", "bangla": False}
+
+
+def test_directory_visibility_requires_current_pro_subscription():
+    where = m._visibility_where()
+    assert "u.plan = 'professional'" in where
+    assert "'active'" in where and "'trialing'" in where
+    assert "u.lawyer_status = 'verified'" in where

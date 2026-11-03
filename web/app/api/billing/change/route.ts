@@ -19,6 +19,9 @@ export async function POST(req: Request) {
   if (plan !== "starter" && plan !== "professional" && plan !== "business") {
     return Response.json({ detail: "Plan must be starter, professional, or business." }, { status: 400 });
   }
+  if (plan === "business") {
+    return Response.json({ detail: "Business plans are coming soon." }, { status: 400 });
+  }
   let priceId: string;
   try {
     priceId = priceIdFor(plan);

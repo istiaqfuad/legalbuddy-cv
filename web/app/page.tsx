@@ -79,17 +79,17 @@ const TIERS = [
     cta: "Choose Professional",
     href: "/pricing",
     soon: false,
-    points: ["Unlimited legal Q&A", "Cited research and case analysis", "First drafts and legal notices"],
+    points: ["Unlimited legal Q&A", "Cited research and case analysis", "Lawyer directory profile"],
   },
   {
     name: "Business",
     price: "~$19.99",
     per: "per month",
-    blurb: "Drafting, tracking, and a workspace for company legal files.",
-    cta: "Choose Business",
+    blurb: "Company plans are on the way. What is coming:",
+    cta: "Coming soon",
     href: "/pricing",
-    soon: false,
-    points: ["Full contract drafting and risk checks", "License tracker and renewal checklists", "Secure company workspace"],
+    soon: true,
+    points: ["Contract drafting", "Compliance tracking", "Company workspace"],
   },
 ];
 

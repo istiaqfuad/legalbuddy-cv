@@ -15,6 +15,8 @@ const TIERS: Array<{
   price: string;
   per: string;
   badge?: string;
+  /** Coming-soon tiers render a static label; no checkout, no plan change. */
+  soon?: boolean;
   blurb: string;
   points: string[];
 }> = [
@@ -45,19 +47,21 @@ const TIERS: Array<{
     price: "~$12.99",
     per: "per month",
     blurb: "For lawyers and anyone researching every day.",
-    points: ["Unlimited cited research", "Case analysis and first drafts", "Lawyer directory profile"],
+    points: ["Unlimited cited research", "Extended deep-research runs", "Lawyer directory profile"],
   },
   {
     id: "business",
     name: "Business",
     price: "~$19.99",
     per: "per month",
-    blurb: "For companies with contracts and compliance on the line.",
+    badge: "Coming soon",
+    soon: true,
+    blurb: "Company plans are on the way. What is coming:",
     points: [
       "Everything in Professional",
-      "Full contract drafting and risk checks",
-      "License tracker and renewal checklists",
-      "Secure workspace for company legal files",
+      "Contract drafting",
+      "Compliance tracking",
+      "Company workspace",
     ],
   },
 ];
@@ -179,6 +183,7 @@ export default function PricingPage() {
    * modal for anything that takes value away. */
   function choose(id: PlanId) {
     if (busy || pending) return;
+    if (TIERS[RANK[id]].soon) return;
     if (RANK[id] > RANK[plan]) {
       void changePlan(id as Exclude<PlanId, "lite">);
       return;
@@ -256,6 +261,10 @@ export default function PricingPage() {
                 ) : current ? (
                   <span className="mt-5 rounded-md border border-stone-700 px-4 py-2 text-center text-sm text-stone-400">
                     Current plan
+                  </span>
+                ) : t.soon ? (
+                  <span className="mt-5 rounded-md border border-stone-700 px-4 py-2 text-center text-sm text-stone-400">
+                    Coming soon
                   </span>
                 ) : !signedIn ? (
                   <Link

@@ -28,11 +28,11 @@ const WHO: Array<{ id: AccountType; title: string; body: string }> = [
   { id: "lawyer", title: "Lawyer", body: "Cited research plus enrollment verification." },
 ];
 
-const PLANS: Array<{ id: "lite" | "starter" | "professional" | "business"; price: string; body: string }> = [
+const PLANS: Array<{ id: "lite" | "starter" | "professional" | "business"; price: string; body: string; soon?: boolean }> = [
   { id: "lite", price: "Free", body: "Capped legal Q&A, full citations." },
   { id: "starter", price: "~$5/mo", body: "100 answers a day for your first matter." },
   { id: "professional", price: "~$12.99/mo", body: "Unlimited cited research and case analysis." },
-  { id: "business", price: "~$19.99/mo", body: "Drafting, trackers, and a company workspace." },
+  { id: "business", price: "~$19.99/mo", body: "Company plans (coming soon).", soon: true },
 ];
 
 function LoginForm() {
@@ -260,8 +260,9 @@ function LoginForm() {
                   <button
                     key={p.id}
                     type="button"
-                    onClick={() => setPlan(p.id)}
-                    className={`${cardCls(plan === p.id)} w-full`}
+                    onClick={() => (p.soon ? null : setPlan(p.id))}
+                    disabled={p.soon}
+                    className={`${cardCls(plan === p.id)} w-full disabled:cursor-not-allowed disabled:opacity-60`}
                   >
                     <span className="flex items-baseline justify-between">
                       <span className="text-sm font-semibold text-stone-100 capitalize">{p.id}</span>

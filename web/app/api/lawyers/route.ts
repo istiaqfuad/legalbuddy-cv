@@ -13,6 +13,7 @@ export async function GET() {
      LEFT JOIN lawyer_verifications v ON v.user_id = u.id
      LEFT JOIN lawyer_reviews r ON r.lawyer_id = u.id
      WHERE u.role = 'lawyer' AND u.lawyer_status = 'verified'
+       AND u.plan = 'professional' AND u.subscription_status IN ('active', 'trialing')
      GROUP BY u.id, u.name, p.practice_areas, p.languages, p.city, p.bio,
               v.bar_association
      ORDER BY rating_count DESC, u.created_at DESC

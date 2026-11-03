@@ -136,10 +136,10 @@ export default function OnboardingPage() {
                 { id: "lite", price: "Free", body: "Capped legal Q&A, full citations." },
                 { id: "starter", price: "~$5/mo", body: "100 answers a day for your first matter." },
                 { id: "professional", price: "~$12.99/mo", body: "Unlimited cited research." },
-                { id: "business", price: "~$19.99/mo", body: "Drafting, trackers, workspace." },
+                { id: "business", price: "~$19.99/mo", body: "Company plans (coming soon).", soon: true },
               ] as const
             ).map((p) => (
-              <button key={p.id} type="button" onClick={() => setPlan(p.id)} className={`${cardCls(plan === p.id)} w-full`}>
+              <button key={p.id} type="button" onClick={() => ("soon" in p && p.soon ? null : setPlan(p.id))} disabled={"soon" in p && !!p.soon} className={`${cardCls(plan === p.id)} w-full disabled:cursor-not-allowed disabled:opacity-60`}>
                 <span className="flex items-baseline justify-between">
                   <span className="text-sm font-semibold text-stone-100 capitalize">{p.id}</span>
                   <span className="font-display text-lg text-gold-light">{p.price}</span>
