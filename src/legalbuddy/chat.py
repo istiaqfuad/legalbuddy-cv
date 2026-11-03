@@ -45,7 +45,11 @@ BASE_URL = os.environ.get("CHAT_BASE_URL", "https://inference.baseten.co/v1")
 
 
 def _chat_key() -> str:
-    return os.environ.get("CHAT_API_KEY") or os.environ["BASETEN_API_KEY"]
+    key = os.environ.get("CHAT_API_KEY") or os.environ.get("BASETEN_API_KEY")
+    if not key:
+        raise RuntimeError(
+            "chat API key missing: set CHAT_API_KEY (or BASETEN_API_KEY) in .env")
+    return key
 # Reasoning models spend tokens thinking: keep headroom so content survives.
 MAX_TOKENS = 2048
 
