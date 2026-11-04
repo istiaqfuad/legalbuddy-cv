@@ -160,7 +160,12 @@ export default function BusinessDashboard() {
   }, []);
 
   useEffect(() => {
-    void load();
+    // Deferred past the mount pass: the initial fetch populates state
+    // but must not run synchronously inside the effect body.
+    const t = setTimeout(() => {
+      void load();
+    }, 0);
+    return () => clearTimeout(t);
   }, [load]);
 
   async function addDeadline(e: React.FormEvent) {

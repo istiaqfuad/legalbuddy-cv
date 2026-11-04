@@ -13,7 +13,7 @@ export default function AuthButton() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isLawyer, setIsLawyer] = useState(false);
   const [openRequests, setOpenRequests] = useState(0);
-  const [imgBroken, setImgBroken] = useState(false);
+  const [failedPhotoUrl, setFailedPhotoUrl] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -21,9 +21,7 @@ export default function AuthButton() {
   const menuRef = useRef<HTMLDivElement>(null);
 
   const photoUrl = session?.user?.image || "";
-  useEffect(() => {
-    setImgBroken(false);
-  }, [photoUrl]);
+  const showPhoto = photoUrl !== "" && failedPhotoUrl !== photoUrl;
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -121,14 +119,14 @@ export default function AuthButton() {
         aria-label="Account menu"
         aria-expanded={menuOpen}
       >
-        {photoUrl && !imgBroken ? (
+        {showPhoto ? (
           <span className="flex size-8 items-center justify-center overflow-hidden rounded-full bg-stone-800">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={photoUrl}
               alt=""
               className="size-8 rounded-full object-cover"
-              onError={() => setImgBroken(true)}
+              onError={() => setFailedPhotoUrl(photoUrl)}
             />
           </span>
         ) : (
