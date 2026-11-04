@@ -47,6 +47,29 @@ matters.
 
 Plan details live on the [pricing page](https://legalbuddy.irflab.tech/pricing).
 
+## Who pays, and why
+
+LegalBuddy is free to try and paid to work with. The model is a funnel, not
+a paywall:
+
+- **Lite (free).** 20 cited answers a day, the full vault, no agent. Enough
+  to trust the answers; tight enough that a real matter hits the wall.
+- **Starter (~$5/mo).** One matter, start to finish: 100 answers a day and
+  short deep-research runs. The first paid step for individuals.
+- **Professional (~$12.99/mo).** Unlimited research, extended agent runs, and
+  the lawyer payoff: a directory profile plus client recommendations. Lawyers
+  pay for visibility and leads, not software.
+- **Business (~$19.99/mo).** The compliance dashboard: deadline tracking with
+  roll-forward, a monthly snapshot, the private vault with expiry suggestions
+  and contract review, and advocate handoff with a preferred visit date.
+
+Two rules hold across every tier. First, dates and citations are records the
+owner can verify; the app never invents a statute, a section, or a deadline,
+and anything ambiguous says so instead of guessing. Second, the platform never
+touches legal fees: lawyers set a public first-visit fee on their profile,
+and clients pay the lawyer in person. Handoff requests carry facts and files
+only; the advice happens between owner and advocate.
+
 ## Quickstart
 
 Requires `uv` (Python 3.14, see `.python-version`) and Docker.
