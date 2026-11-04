@@ -565,10 +565,13 @@ def post_agent_stream(req: AgentChatRequest):
 
     Same event contract as :func:`post_chat_stream` plus ``step``
     (``{"tool": name, "status": "started" | "done"}``) so the UI can
-    narrate the research while it runs. ``max_tool_calls`` caps the
-    ReAct loop; the web tier sets it from the user's plan.
+    narrate the research while it runs, and a leading ``budget``
+    (``{"total": max_tool_calls}``) so the UI can show step N of M.
+    ``max_tool_calls`` caps the ReAct loop; the web tier sets it
+    from the user's plan.
     """
     def events():
+        yield _sse("budget", json.dumps({"total": req.max_tool_calls}))
         try:
             from legalbuddy import agent as agent_mod
             gen = agent_mod.run_agent(

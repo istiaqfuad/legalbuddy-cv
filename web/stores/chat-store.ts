@@ -44,6 +44,8 @@ interface ChatState {
   agentMode: boolean;
   /** Live tool narrative for the in-flight agent run. */
   agentSteps: Array<{ tool: string; status: "started" | "done" }>;
+  /** Step budget for the in-flight run (plan-sized server-side). */
+  agentBudget: number | null;
   /** Lite user tried deep research: banner links to pricing. */
   agentLocked: boolean;
   setAgentMode: (on: boolean) => void;
@@ -126,7 +128,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
   ): Promise<void> {
     const docIds = get().attachedIds;
     const useAgent = get().agentMode;
-    if (useAgent) set({ agentSteps: [], agentLocked: false });
+    if (useAgent) set({ agentSteps: [], agentBudget: null, agentLocked: false });
     // Local accumulator: state reads would go stale when several token
     // events land in one read chunk.
     let acc = "";
@@ -165,6 +167,8 @@ export const useChatStore = create<ChatState>()((set, get) => {
           set((s) =>
             conversationId === s.activeId ? { agentSteps: [...s.agentSteps, step] } : {},
           );
+        } else if (ev.type === "budget") {
+          set((s) => (conversationId === s.activeId ? { agentBudget: ev.total } : {}));
         } else {
           if (ev.citations.length > 0 || ev.type === "done") {
             if (ev.citations.length > 0) finalCitations = ev.citations;
@@ -255,6 +259,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
     quotaExceeded: false,
     agentMode: false,
     agentSteps: [],
+    agentBudget: null,
     agentLocked: false,
     buffers: {},
     busy: {},

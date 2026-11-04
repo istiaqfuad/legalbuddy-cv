@@ -11,6 +11,7 @@ import type { Citation } from "./types";
 export type ChatEvent =
   | { type: "token"; text: string }
   | { type: "step"; tool: string; status: "started" | "done" }
+  | { type: "budget"; total: number }
   | { type: "meta"; citations: Citation[]; model?: string }
   | { type: "done"; answer: string; citations: Citation[]; model?: string };
 
@@ -124,6 +125,11 @@ export async function* streamChat(
           gotToken = true;
           const data = JSON.parse(ev.data) as { tool?: string; status?: "started" | "done" };
           yield { type: "step", tool: data.tool ?? "search", status: data.status ?? "started" };
+        } else if (ev.name === "budget") {
+          const data = JSON.parse(ev.data) as { total?: number };
+          if (Number.isInteger(data.total) && (data.total as number) > 0) {
+            yield { type: "budget", total: data.total as number };
+          }
         } else if (ev.name === "meta" || ev.name === "done") {
           const data = JSON.parse(ev.data) as {
             answer?: string;

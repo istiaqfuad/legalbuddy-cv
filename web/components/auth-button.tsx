@@ -13,11 +13,17 @@ export default function AuthButton() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isLawyer, setIsLawyer] = useState(false);
   const [openRequests, setOpenRequests] = useState(0);
+  const [imgBroken, setImgBroken] = useState(false);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const photoUrl = session?.user?.image || "";
+  useEffect(() => {
+    setImgBroken(false);
+  }, [photoUrl]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -115,12 +121,19 @@ export default function AuthButton() {
         aria-label="Account menu"
         aria-expanded={menuOpen}
       >
-        {session.user.image ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={session.user.image} alt="" className="size-8 rounded-full object-cover" />
+        {photoUrl && !imgBroken ? (
+          <span className="flex size-8 items-center justify-center overflow-hidden rounded-full bg-stone-800">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={photoUrl}
+              alt=""
+              className="size-8 rounded-full object-cover"
+              onError={() => setImgBroken(true)}
+            />
+          </span>
         ) : (
-          <span className="flex size-8 items-center justify-center rounded-full bg-stone-800 ring-1 ring-stone-700 ring-inset">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-stone-500" aria-hidden="true">
+          <span className="flex size-8 items-center justify-center rounded-full bg-stone-700 ring-1 ring-stone-600 ring-inset">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-stone-200" aria-hidden="true">
               <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
               <circle cx="12" cy="7" r="4" />
             </svg>

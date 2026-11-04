@@ -85,3 +85,28 @@ def test_empty_evidence_yields_no_verify_answer(monkeypatch):
 
 def test_chunks_split_evenly():
     assert list(agent_mod._chunks("abcdef", 2)) == ["ab", "cd", "ef"]
+
+
+def test_agent_stream_leads_with_budget(monkeypatch):
+    """The stream opens with the plan-sized step budget for the progress bar."""
+    import json
+    from types import SimpleNamespace
+
+    import legalbuddy.agent as agent_mod
+    import legalbuddy.api as api_mod
+    from fastapi.testclient import TestClient
+
+    events = [("done", SimpleNamespace(text="ok", model="m", citations=[]))]
+
+    def fake_run_agent(*a, **k):
+        yield from events
+
+    monkeypatch.setattr(agent_mod, "run_agent", fake_run_agent)
+    resp = TestClient(api_mod.app).post(
+        "/api/chat/agent/stream",
+        json={"question": "q", "user_id": "u", "max_tool_calls": 3},
+    )
+    assert resp.status_code == 200
+    first = resp.text.split("\n\n")[0]
+    assert first.startswith("event: budget")
+    assert json.loads(first.split("data: ", 1)[1]) == {"total": 3}

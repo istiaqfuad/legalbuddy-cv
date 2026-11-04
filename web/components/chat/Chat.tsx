@@ -30,6 +30,10 @@ export default function Chat() {
   const quotaExceeded = useChatStore((s) => s.quotaExceeded);
   const agentMode = useChatStore((s) => s.agentMode);
   const agentSteps = useChatStore((s) => s.agentSteps);
+  const agentBudget = useChatStore((s) => s.agentBudget);
+  const agentDone = agentSteps.filter((s) => s.status === "done").length;
+  const agentTotal = agentBudget && agentBudget > 0 ? Math.min(agentBudget, 12) : null;
+  const agentLabel = agentTotal === 3 ? "Starter research" : "Extended research";
   const agentLocked = useChatStore((s) => s.agentLocked);
   const setAgentMode = useChatStore((s) => s.setAgentMode);
   const send = useChatStore((s) => s.send);
@@ -196,17 +200,44 @@ export default function Chat() {
                         onCite={(key) => openSources(msg.citations ?? [], key)}
                       />
                     ) : agentSteps.length > 0 ? (
-                      <ul className="space-y-1 text-stone-400">
-                        {agentSteps.map((s, si) => (
-                          <li key={si} className="flex items-center gap-2">
-                            <span aria-hidden className="text-gold">
-                              {s.status === "done" ? "✓" : "…"}
-                            </span>
-                            {stepLabel(s.tool)}
-                            {s.status === "started" ? <ThinkingDots /> : null}
-                          </li>
-                        ))}
-                      </ul>
+                      <div>
+                        {agentTotal ? (
+                          <div className="mb-2">
+                            <div className="flex items-baseline justify-between gap-2">
+                              <p className="text-xs font-medium text-stone-300">
+                                {agentLabel} · step {Math.min(agentDone + 1, agentTotal)} of {agentTotal}
+                              </p>
+                              <p className="text-[11px] text-stone-500">
+                                {Math.round((Math.min(agentDone, agentTotal) / agentTotal) * 100)}%
+                              </p>
+                            </div>
+                            <div
+                              className="mt-1.5 h-1 overflow-hidden rounded-full bg-stone-800"
+                              role="progressbar"
+                              aria-valuemin={0}
+                              aria-valuemax={agentTotal}
+                              aria-valuenow={Math.min(agentDone, agentTotal)}
+                              aria-label={`${agentLabel} progress`}
+                            >
+                              <div
+                                className="h-full rounded-full bg-gold transition-[width] duration-500 motion-reduce:transition-none"
+                                style={{ width: `${(Math.min(agentDone, agentTotal) / agentTotal) * 100}%` }}
+                              />
+                            </div>
+                          </div>
+                        ) : null}
+                        <ul className="space-y-1 text-stone-400">
+                          {agentSteps.map((s, si) => (
+                            <li key={si} className="flex items-center gap-2">
+                              <span aria-hidden className="text-gold">
+                                {s.status === "done" ? "✓" : "…"}
+                              </span>
+                              {stepLabel(s.tool)}
+                              {s.status === "started" ? <ThinkingDots /> : null}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
                     ) : (
                       <p className="flex items-center gap-2 text-stone-400">
                         Consulting the statutes <ThinkingDots />
