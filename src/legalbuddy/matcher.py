@@ -60,33 +60,85 @@ CLASSIFY_SYSTEM = (
 )
 
 
+# Keyword fallback when the model call fails or returns nothing
+# usable: the small model occasionally answers empty, and an empty
+# classification degrades to the unranked directory. Keywords are
+# deliberately narrow; unknown matters still fall back to directory.
+_FALLBACK_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "criminal": ("murder", "bail", "arrest", "police case", "fir", "section 302",
+                 "narcotics", "dowry", "cheque dishonour", "cheque bounce"),
+    "family": ("divorce", "dower", "denmohor", "custody", "maintenance",
+               "inheritance", "marriage", "kabinnama"),
+    "property": ("land", "plot", "flat", "property", "ownership", "transfer",
+                 "registration", "mutation", "khatian", "boundary", "wall",
+                 "evict", "tenant", "rent"),
+    "corporate": ("company", "rjsc", "partnership", "shareholder", "trade licence",
+                  "business registration"),
+    "labor": ("salary", "wages", "termination", "appointment letter", "overtime",
+              "gratuity", "provident fund", "factory", "union"),
+    "tax": ("tax", "vat", "tin", "bin", "customs", "nbr", "return filing"),
+    "consumer": ("refund", "warranty", "defective", "consumer", "online seller",
+                 "fraud", "cheated"),
+    "immigration": ("visa", "passport", "work permit", "deport", "immigration"),
+}
+
+
+def classify_by_keywords(numbered_questions: str) -> dict:
+    """Deterministic area guess from keyword hits, prominence-ordered."""
+    text = (numbered_questions or "").casefold()
+    scored = sorted(
+        ((sum(text.count(k) for k in keys), area)
+         for area, keys in _FALLBACK_KEYWORDS.items()),
+        reverse=True,
+    )
+    areas = [area for hits, area in scored if hits > 0]
+    first = (numbered_questions or "").strip().splitlines()
+    return {
+        "areas": areas,
+        "dominant": areas[0] if areas else None,
+        "summary": (first[0][:200] if first else "")[:500],
+        "bangla": bool(BN_PATTERN.search(numbered_questions or "")),
+    }
+
+
 def classify_matters(numbered_questions: str, client, model: str) -> dict:
-    """One Spark call over the numbered recent questions. Falls back to an
-    empty classification (caller treats it as directory fallback)."""
-    try:
-        out = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": CLASSIFY_SYSTEM},
-                {"role": "user", "content": numbered_questions[:6000]},
-            ],
-            max_tokens=1024,
-            temperature=0.0,
-        )
-        text = (out.choices[0].message.content or "").strip()
-        start = text.find("{")
-        data = json.loads(text[start:] if start >= 0 else text)
-        areas = [a for a in data.get("areas", []) if a in PRACTICE_AREAS]
-        dominant = data.get("dominant") if data.get("dominant") in PRACTICE_AREAS else None
-        return {
-            "areas": areas,
-            "dominant": dominant or (areas[0] if areas else None),
-            "summary": str(data.get("summary", ""))[:500],
-            "bangla": bool(data.get("bangla", False)),
-        }
-    except Exception as exc:
-        logger.warning("matter classification failed: %s", exc)
-        return {"areas": [], "dominant": None, "summary": "", "bangla": False}
+    """Spark call over the numbered recent questions, retried once.
+
+    The small model intermittently returns empty content; an empty
+    classification would degrade to the unranked directory, so a second
+    attempt runs before the deterministic keyword fallback.
+    """
+    last: dict = {"areas": [], "dominant": None, "summary": "", "bangla": False}
+    for _ in range(2):
+        try:
+            out = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": CLASSIFY_SYSTEM},
+                    {"role": "user", "content": numbered_questions[:6000]},
+                ],
+                max_tokens=1024,
+                temperature=0.0,
+            )
+            text = (out.choices[0].message.content or "").strip()
+            start = text.find("{")
+            data = json.loads(text[start:] if start >= 0 else text)
+            areas = [a for a in data.get("areas", []) if a in PRACTICE_AREAS]
+            dominant = data.get("dominant") if data.get("dominant") in PRACTICE_AREAS else None
+            if not areas and dominant is None:
+                continue  # empty but valid JSON: retry, don't trust it
+            return {
+                "areas": areas,
+                "dominant": dominant or (areas[0] if areas else None),
+                "summary": str(data.get("summary", ""))[:500],
+                "bangla": bool(data.get("bangla", False)),
+            }
+        except Exception as exc:
+            logger.warning("matter classification failed: %s", exc)
+            last = classify_by_keywords(numbered_questions)
+    if not last.get("areas"):
+        last = classify_by_keywords(numbered_questions)
+    return last
 
 
 def cosine(a: list[float], b: list[float]) -> float:

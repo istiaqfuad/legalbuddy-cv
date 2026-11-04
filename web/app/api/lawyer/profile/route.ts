@@ -80,7 +80,7 @@ export async function PATCH(req: Request) {
     return Response.json({ detail: "Lawyer accounts only." }, { status: 403 });
   }
   const patch: Record<string, unknown> = {};
-  if (areas) patch.practice_areas = areas;
+  if (areas && areas.length > 0) patch.practice_areas = areas;
   if (langs && langs.length > 0) patch.languages = langs;
   if (city !== undefined) patch.city = city;
   if (bio !== undefined) patch.bio = bio;

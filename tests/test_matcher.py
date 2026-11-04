@@ -108,14 +108,38 @@ class TestScoreLawyers:
 
 
 class TestClassifyFallback:
-    def test_client_error_yields_empty(self):
+    def test_client_error_yields_keyword_fallback(self):
         class Boom:
             @property
             def chat(self):
                 raise AssertionError("unreachable")
 
         out = m.classify_matters("1. hello", Boom(), "model")
-        assert out == {"areas": [], "dominant": None, "summary": "", "bangla": False}
+        assert out == {"areas": [], "dominant": None, "summary": "1. hello", "bangla": False}
+        out = m.classify_matters("1. who inherits my land?", Boom(), "model")
+        assert out["areas"][0] == "property" and out["dominant"] == "property"
+
+    def test_empty_model_answer_retries_then_falls_back(self):
+        calls = []
+
+        class EmptyThenBoom:
+            @property
+            def chat(self):
+                calls.append(1)
+
+                class Completions:
+                    def create(self, **kwargs):
+                        if len(calls) == 1:
+                            from types import SimpleNamespace
+
+                            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=""))])
+                        raise AssertionError("unreachable")
+
+                return Completions()
+
+        out = m.classify_matters("1. bail for my brother?", EmptyThenBoom(), "model")
+        assert len(calls) == 2  # retried once
+        assert out["dominant"] == "criminal"
 
 
 def test_directory_visibility_requires_current_pro_subscription():
