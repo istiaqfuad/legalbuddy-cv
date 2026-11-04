@@ -106,6 +106,41 @@ def test_chat_stream_skips_choiceless_keepalives(monkeypatch):
     assert out == ["meta", "token", "done"]
 
 
+def test_chat_stream_retries_empty_completion(monkeypatch):
+    """A reasoning gateway that spends its budget on hidden thinking
+    returns zero content; the stream retries once before giving up."""
+    from types import SimpleNamespace
+
+    calls = []
+
+    def chunk(text):
+        return SimpleNamespace(choices=[SimpleNamespace(
+            delta=SimpleNamespace(content=text))])
+
+    class FakeCompletions:
+        def create(self, **kw):
+            calls.append(kw)
+            if len(calls) == 1:
+                return iter([chunk(None), chunk("")])
+            return iter([chunk("recovered")])
+
+    class FakeClient:
+        chat = SimpleNamespace(completions=FakeCompletions())
+
+    import legalbuddy.chat as chat_mod
+    monkeypatch.setattr(chat_mod, "_client", lambda: FakeClient())
+    monkeypatch.setattr(chat_mod, "retrieve", lambda *a, **k: SimpleNamespace(points=[object()]))
+    monkeypatch.setattr(chat_mod, "_evidence_block",
+                        lambda hits: ("E", [chat_mod.Citation(
+                            ref=1, act_title="A", act_no="N", act_year="2000",
+                            section_label="1", section_title="T", excerpt="x",
+                            source_url="u", chunk_id="c", score=0.1)]))
+    events = list(chat_mod.stream_answer("q"))
+    assert [kind for kind, _ in events] == ["meta", "token", "done"]
+    assert len(calls) == 2
+    assert events[-1][1].text == "recovered"
+
+
 def test_chat_stream_mid_failure_stays_generic(monkeypatch):
     def fake_stream(*a, **k):
         yield ("token", "partial ")

@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import time
 from dataclasses import dataclass, field
 
 log = logging.getLogger(__name__)
@@ -51,7 +52,8 @@ def _chat_key() -> str:
             "chat API key missing: set CHAT_API_KEY (or BASETEN_API_KEY) in .env")
     return key
 # Reasoning models spend tokens thinking: keep headroom so content survives.
-MAX_TOKENS = 2048
+MAX_TOKENS = 4096
+MAX_ATTEMPTS = 3
 
 SYSTEM_PROMPT = """You are LegalBuddy, a Bangladesh legal research assistant. \
 Answer ONLY from the excerpts in EVIDENCE. Every material claim must end \
@@ -322,27 +324,37 @@ def stream_answer(question: str, language: str | None = None,
                   f"CURRENT QUESTION: {standalone}\n\n"
                   f"EVIDENCE:\n{evidence}")
     yield ("meta", {"citations": citations, "model": CHAT_MODEL})
-    stream = _client().chat.completions.create(
-        model=CHAT_MODEL,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ],
-        max_tokens=MAX_TOKENS,
-        temperature=0.1,
-        stream=True,
-    )
-    parts: list[str] = []
-    for chunk in stream:
-        # Reasoning gateways interleave keepalive chunks with no choices;
-        # the opening chunk may carry only a role. Neither holds text.
-        if not chunk.choices:
-            continue
-        delta = getattr(chunk.choices[0].delta, "content", None) or ""
-        if delta:
-            parts.append(delta)
-            yield ("token", delta)
-    text = "".join(parts)
+    # Reasoning gateways occasionally spend the whole token budget on
+    # hidden thinking and return zero content. Nothing has been shown to
+    # the user yet at that point, so silent retries are safe.
+    text = ""
+    for _attempt in range(MAX_ATTEMPTS):
+        stream = _client().chat.completions.create(
+            model=CHAT_MODEL,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=MAX_TOKENS,
+            temperature=0.1,
+            stream=True,
+        )
+        parts: list[str] = []
+        for chunk in stream:
+            # Reasoning gateways interleave keepalive chunks with no choices;
+            # the opening chunk may carry only a role. Neither holds text.
+            if not chunk.choices:
+                continue
+            delta = getattr(chunk.choices[0].delta, "content", None) or ""
+            if delta:
+                parts.append(delta)
+                yield ("token", delta)
+        text = "".join(parts)
+        if text.strip():
+            break
+        log.warning("empty chat completion on attempt %d/%d, retrying",
+                    _attempt + 1, MAX_ATTEMPTS)
+        time.sleep(2 * (_attempt + 1))
     if not text.strip():
         raise RuntimeError("Empty chat completion (reasoning exhausted token budget?)")
     if conversation_id:
