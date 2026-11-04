@@ -30,7 +30,25 @@ there, default 150s), then a rolling idle budget once tokens flow
 into the friendly error plus a working retry. Verified with a
 held-open stub stream: friendly error appears and typing re-enables Ask.
 
-## 3. Error contract: nothing internal reaches the browser
+## 3. Empty completions: reasoning ate the token budget
+
+**Symptom.** Some runs returned HTTP 200 with zero content; the API log
+showed `RuntimeError: Empty chat completion (reasoning exhausted token
+budget?)` at `stream_answer`. Bursts of it in a row, so a single retry
+was not enough.
+
+**Root cause.** The hosted reasoning model spends the token budget on
+hidden thinking and occasionally emits nothing. `MAX_TOKENS` was 2048,
+leaving little room after reasoning.
+
+**Fix.** Raised `MAX_TOKENS` to 4096 and retry the generation up to
+`MAX_ATTEMPTS` (3) with backoff. Retries only happen while zero tokens
+have been yielded, so the user can never see duplicated text
+(`src/legalbuddy/chat.py::stream_answer`). Regression test returns an
+empty stream then content through the real generator
+(`tests/test_api.py::test_chat_stream_retries_empty_completion`).
+
+## 4. Error contract: nothing internal reaches the browser
 
 Upstream status codes, exception text, hostnames, and tracebacks stay in
 server logs. The Next route maps every upstream failure to one generic
