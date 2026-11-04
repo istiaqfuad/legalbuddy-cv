@@ -58,9 +58,12 @@ jobs:
       - name: Log in to Heroku Container Registry
         run: echo "${{ secrets.HEROKU_API_KEY }}" | docker login registry.heroku.com -u _ --password-stdin
       - name: Build and push image
+        # Heroku's registry rejects manifest lists, which BuildKit
+        # produces by default via provenance/SBOM attestations.
         run: |
-          docker build -f Dockerfile.heroku -t "$REGISTRY_IMAGE" .
-          docker push "$REGISTRY_IMAGE"
+          docker buildx build --platform linux/amd64 \
+            --provenance=false --sbom=false \
+            -f Dockerfile.heroku -t "$REGISTRY_IMAGE" --push .
       - name: Install Heroku CLI
         run: curl https://cli-assets.heroku.com/install.sh | sh
       - name: Release to Heroku
