@@ -191,6 +191,7 @@ CREATE TABLE IF NOT EXISTS business_handoffs (
   doc_ids TEXT[] NOT NULL DEFAULT '{}',
   status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'accepted', 'closed')),
   lawyer_note TEXT NOT NULL DEFAULT '',
+  preferred_date DATE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -205,3 +206,7 @@ CREATE INDEX IF NOT EXISTS business_handoffs_owner_idx
 -- the platform never touches it.
 ALTER TABLE lawyer_profiles ADD COLUMN IF NOT EXISTS consultation_fee_bdt INTEGER
   CHECK (consultation_fee_bdt IS NULL OR consultation_fee_bdt BETWEEN 0 AND 10000000);
+
+-- Preferred first-visit date on a handoff (owner's suggestion, not a
+-- confirmed appointment). Lawyers confirm the actual slot directly.
+ALTER TABLE business_handoffs ADD COLUMN IF NOT EXISTS preferred_date DATE;

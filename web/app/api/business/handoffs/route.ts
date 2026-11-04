@@ -10,6 +10,7 @@ export async function GET() {
   try {
     const rows = (await getDb().query(
       `SELECT h.id, h.subject, h.details, h.doc_ids, h.status, h.lawyer_note,
+              to_char(h.preferred_date, 'YYYY-MM-DD') AS preferred_date,
               to_char(h.created_at, 'YYYY-MM-DD') AS created,
               COALESCE(u.name, '') AS lawyer_name
        FROM business_handoffs h
@@ -39,6 +40,10 @@ export async function POST(req: Request) {
   const lawyerId = typeof body.lawyer_id === "string" ? body.lawyer_id : "";
   const subject = typeof body.subject === "string" ? body.subject.trim().slice(0, 160) : "";
   const details = typeof body.details === "string" ? body.details.trim().slice(0, 2000) : "";
+  const preferredDate =
+    typeof body.preferred_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.preferred_date)
+      ? body.preferred_date
+      : null;
   const docIds = Array.isArray(body.doc_ids)
     ? body.doc_ids.filter((d): d is string => typeof d === "string" && d.length > 0).slice(0, 10)
     : [];
@@ -58,9 +63,9 @@ export async function POST(req: Request) {
       if (foreign.length) return Response.json({ detail: "One of those files is not yours." }, { status: 400 });
     }
     await getDb().query(
-      `INSERT INTO business_handoffs (user_id, lawyer_id, subject, details, doc_ids)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [owner.id, lawyerId, subject, details, docIds],
+      `INSERT INTO business_handoffs (user_id, lawyer_id, subject, details, doc_ids, preferred_date)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [owner.id, lawyerId, subject, details, docIds, preferredDate],
     );
     return Response.json({ ok: true });
   } catch (err) {

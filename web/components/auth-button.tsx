@@ -11,6 +11,8 @@ export default function AuthButton() {
   const { data: session, status, update } = useSession();
   const [menuOpen, setMenuOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isLawyer, setIsLawyer] = useState(false);
+  const [openRequests, setOpenRequests] = useState(0);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -88,7 +90,21 @@ export default function AuthButton() {
             setName(session?.user?.name ?? "");
             fetch("/api/billing/status")
               .then((r) => (r.ok ? r.json() : null))
-              .then((d) => setIsAdmin(d?.role === "admin"))
+              .then((d) => {
+                setIsAdmin(d?.role === "admin");
+                const lawyer = d?.role === "lawyer" && d?.lawyerStatus === "verified";
+                setIsLawyer(lawyer);
+                if (lawyer) {
+                  fetch("/api/lawyer/handoffs")
+                    .then((r) => (r.ok ? r.json() : null))
+                    .then((h) =>
+                      setOpenRequests(
+                        Array.isArray(h?.handoffs) ? h.handoffs.filter((x: { status: string }) => x.status === "open").length : 0,
+                      ),
+                    )
+                    .catch(() => {});
+                }
+              })
               .catch(() => {});
           }
           setMenuOpen((o) => !o);
@@ -191,6 +207,23 @@ export default function AuthButton() {
                     <path d="m19.1 4.9-1.4 1.4" />
                   </svg>
                   Administration
+                </Link>
+              ) : null}
+              {isLawyer ? (
+                <Link
+                  href="/lawyer/requests"
+                  onClick={() => setMenuOpen(false)}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-stone-300 transition-colors hover:bg-stone-800/70 hover:text-stone-100"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z" />
+                  </svg>
+                  Business requests
+                  {openRequests > 0 ? (
+                    <span className="ml-auto rounded-full bg-gold px-2 py-0.5 text-[11px] font-semibold text-ink">
+                      {openRequests}
+                    </span>
+                  ) : null}
                 </Link>
               ) : null}
               <Link

@@ -16,6 +16,7 @@ interface Handoff {
   status: "open" | "accepted" | "closed";
   lawyer_note: string;
   created: string;
+  preferred_date: string | null;
   owner_name: string;
   business_name: string;
 }
@@ -134,6 +135,7 @@ export default function LawyerRequests() {
                 <span className="block truncate text-sm font-medium text-stone-100">{h.subject}</span>
                 <span className="mt-0.5 block text-xs text-stone-500">
                   {h.business_name || h.owner_name} · {h.created} · {h.status}
+                  {h.preferred_date ? ` · prefers visit ${h.preferred_date}` : ""}
                 </span>
               </span>
               <span className="text-xs text-stone-500">{openId === h.id ? "Hide" : "View"}</span>

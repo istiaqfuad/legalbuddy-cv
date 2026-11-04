@@ -118,11 +118,12 @@ export default function BusinessDashboard() {
   const [pCustomerData, setPCustomerData] = useState(false);
 
   const [lawyers, setLawyers] = useState<Array<{ user_id: string; display_name: string; practice_areas: string[]; city: string | null; consultation_fee_bdt: number | null }>>([]);
-  const [handoffs, setHandoffs] = useState<Array<{ id: string; subject: string; status: string; lawyer_name: string; created: string; lawyer_note: string }>>([]);
+  const [handoffs, setHandoffs] = useState<Array<{ id: string; subject: string; status: string; lawyer_name: string; created: string; lawyer_note: string; preferred_date: string | null }>>([]);
   const [hLawyer, setHLawyer] = useState("");
   const [hSubject, setHSubject] = useState("");
   const [hDetails, setHDetails] = useState("");
   const [hDocs, setHDocs] = useState<string[]>([]);
+  const [hPrefDate, setHPrefDate] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -311,6 +312,20 @@ export default function BusinessDashboard() {
     setHDocs((prev) => (prev.includes(id) ? prev.filter((d) => d !== id) : [...prev, id]));
   }
 
+  async function withdrawHandoff(id: string) {
+    setError(null);
+    try {
+      const res = await fetch(`/api/business/handoffs/${id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(typeof data?.detail === "string" ? data.detail : "Could not withdraw the request.");
+      }
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not withdraw the request.");
+    }
+  }
+
   async function sendHandoff(e: React.FormEvent) {
     e.preventDefault();
     if (!hLawyer || !hSubject.trim() || busy) return;
@@ -325,6 +340,7 @@ export default function BusinessDashboard() {
           subject: hSubject.trim(),
           details: hDetails.trim(),
           doc_ids: hDocs,
+          preferred_date: hPrefDate || null,
         }),
       });
       const data = await res.json().catch(() => null);
@@ -335,6 +351,7 @@ export default function BusinessDashboard() {
       setHSubject("");
       setHDetails("");
       setHDocs([]);
+      setHPrefDate("");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not send the request.");
@@ -631,6 +648,7 @@ export default function BusinessDashboard() {
             ))}
           </select>
           <input value={hSubject} onChange={(e) => setHSubject(e.target.value)} placeholder="Subject, e.g. Review supplier contract" maxLength={160} required className={inputCls} />
+          <input type="date" value={hPrefDate} onChange={(e) => setHPrefDate(e.target.value)} className={inputCls} aria-label="Preferred first-visit date (optional)" />
           <textarea value={hDetails} onChange={(e) => setHDetails(e.target.value)} placeholder="The facts: what happened, what you need, dates that matter (optional)" maxLength={2000} rows={3} className={inputCls} />
           {docs.length > 0 ? (
             <fieldset>
@@ -659,9 +677,15 @@ export default function BusinessDashboard() {
                   <p className="truncate font-medium text-stone-100">{h.subject}</p>
                   <p className="mt-0.5 text-xs text-stone-500">
                     {h.lawyer_name} · {h.created} · {h.status}
+                    {h.preferred_date ? ` · visit ${h.preferred_date}` : ""}
                     {h.lawyer_note ? ` — ${h.lawyer_note}` : ""}
                   </p>
                 </div>
+                {h.status === "open" ? (
+                  <button onClick={() => void withdrawHandoff(h.id)} className={ghostBtn} aria-label={`Withdraw ${h.subject}`}>
+                    Withdraw
+                  </button>
+                ) : null}
               </li>
             ))}
           </ul>

@@ -8,6 +8,7 @@ export async function GET() {
   try {
     const rows = (await getDb().query(
       `SELECT h.id, h.subject, h.details, h.doc_ids, h.status, h.lawyer_note,
+              to_char(h.preferred_date, 'YYYY-MM-DD') AS preferred_date,
               to_char(h.created_at, 'YYYY-MM-DD') AS created,
               COALESCE(u.name, '') AS owner_name,
               COALESCE(bp.business_name, '') AS business_name
