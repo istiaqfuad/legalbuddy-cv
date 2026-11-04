@@ -94,19 +94,23 @@ export async function PATCH(req: Request) {
        updated_at = now()`,
     [session.user.id, ...keys.map((k) => patch[k])],
   );
-  // Refresh the cached embedding from the merged row.
-  const merged = (await db.query(
-    "SELECT practice_areas, languages, city, bio FROM lawyer_profiles WHERE user_id = $1",
-    [session.user.id],
-  )) as Array<{
-    practice_areas: string[] | null;
-    languages: string[] | null;
-    city: string | null;
-    bio: string | null;
-  }>;
-  const m = merged[0];
-  if (m) {
+  // Refresh the cached embedding from the merged row without blocking
+  // the save: embedding is a derived cache (Voyage can stall under load)
+  // and the profile text itself is already committed above.
+  const userId = session.user.id;
+  void (async () => {
     try {
+      const merged = (await db.query(
+        "SELECT practice_areas, languages, city, bio FROM lawyer_profiles WHERE user_id = $1",
+        [userId],
+      )) as Array<{
+        practice_areas: string[] | null;
+        languages: string[] | null;
+        city: string | null;
+        bio: string | null;
+      }>;
+      const m = merged[0];
+      if (!m) return;
       const base = internalBase();
       const res = await fetch(`${base}/api/profile-embed`, {
         method: "POST",
@@ -114,20 +118,20 @@ export async function PATCH(req: Request) {
         body: JSON.stringify({ text: profileText(m) || "lawyer" }),
         signal: AbortSignal.timeout(60_000),
       });
-      if (res.ok) {
-        const out = (await res.json()) as { embedding?: number[] };
-        if (Array.isArray(out.embedding)) {
-          await db.query("UPDATE lawyer_profiles SET profile_embedding = $1 WHERE user_id = $2", [
-            JSON.stringify(out.embedding),
-            session.user.id,
-          ]);
-        }
-      } else {
+      if (!res.ok) {
         console.error(`profile embed upstream: ${res.status}`);
+        return;
+      }
+      const out = (await res.json()) as { embedding?: number[] };
+      if (Array.isArray(out.embedding)) {
+        await db.query("UPDATE lawyer_profiles SET profile_embedding = $1 WHERE user_id = $2", [
+          JSON.stringify(out.embedding),
+          userId,
+        ]);
       }
     } catch (err) {
       console.error(`profile embed failed: ${err instanceof Error ? err.message : err}`);
     }
-  }
+  })();
   return Response.json({ ok: true });
 }
