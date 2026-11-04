@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import SiteHeader from "@/components/site-header";
-import { LANGUAGES, PRACTICE_AREAS } from "@/lib/lawyers";
+import { LANGUAGES, PRACTICE_AREAS, formatFee } from "@/lib/lawyers";
 
 type Suggestion = {
   user_id: string;
@@ -14,6 +14,7 @@ type Suggestion = {
   city: string | null;
   bio: string | null;
   bar_association: string | null;
+  consultation_fee_bdt: number | null;
   rating_avg: number;
   rating_count: number;
   score: number;
@@ -135,6 +136,7 @@ function LawyerCard({ l, reason, signedIn, onRated }: { l: Entry | Suggestion; r
       <p className="mt-2 text-xs text-stone-500">
         {[l.bar_association, l.city, l.languages.join(" · ")].filter(Boolean).join(" · ")}
       </p>
+      <p className="mt-1 text-xs font-medium text-gold-light">{formatFee(l.consultation_fee_bdt)}</p>
       <div className="mt-3">
         <RateForm userId={l.user_id} signedIn={signedIn} onDone={onRated} />
       </div>
@@ -147,6 +149,7 @@ function MyPractice({ onSaved }: { onSaved: () => void }) {
   const [langs, setLangs] = useState<string[]>(["english"]);
   const [city, setCity] = useState("");
   const [bio, setBio] = useState("");
+  const [fee, setFee] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -159,6 +162,7 @@ function MyPractice({ onSaved }: { onSaved: () => void }) {
         setLangs(d.languages?.length ? d.languages : ["english"]);
         setCity(d.city ?? "");
         setBio(d.bio ?? "");
+        setFee(d.consultationFeeBdt == null ? "" : String(d.consultationFeeBdt));
       })
       .catch(() => {});
   }, []);
@@ -173,10 +177,23 @@ function MyPractice({ onSaved }: { onSaved: () => void }) {
     setBusy(true);
     setMsg(null);
     try {
+      const trimmedFee = fee.trim();
+      const feeNum = trimmedFee === "" ? null : Number(trimmedFee);
+      if (feeNum !== null && (!Number.isInteger(feeNum) || feeNum < 0 || feeNum > 10000000)) {
+        setMsg("Fee must be a whole taka amount between 0 and 1,00,00,000, or left blank.");
+        setBusy(false);
+        return;
+      }
       const res = await fetch("/api/lawyer/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ practiceAreas: areas, languages: langs, city: city.trim() || null, bio: bio.trim() || null }),
+        body: JSON.stringify({
+          practiceAreas: areas,
+          languages: langs,
+          city: city.trim() || null,
+          bio: bio.trim() || null,
+          consultationFeeBdt: feeNum,
+        }),
       });
       setMsg(res.ok ? "Saved. Your profile is now matchable." : "Could not save. Try again.");
       if (res.ok) onSaved();
@@ -223,6 +240,18 @@ function MyPractice({ onSaved }: { onSaved: () => void }) {
         <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="City, e.g. Dhaka" maxLength={80} className={inputCls} />
         <input value={bio} onChange={(e) => setBio(e.target.value)} placeholder="One line about your work" maxLength={1000} className={inputCls} />
       </div>
+      <p className="mt-4 text-xs font-medium text-stone-400">First-visit consultation fee (৳, blank for on request)</p>
+      <div className="mt-2 max-w-xs">
+        <input
+          value={fee}
+          onChange={(e) => setFee(e.target.value.replace(/[^0-9]/g, "").slice(0, 8))}
+          placeholder="e.g. 2000"
+          inputMode="numeric"
+          className={inputCls}
+          aria-label="First-visit consultation fee in taka"
+        />
+      </div>
+      <p className="mt-1 text-xs text-stone-500">Shown publicly on your profile. Paid to you in person, never through the app.</p>
       {msg ? <p className="mt-2 text-xs text-stone-300">{msg}</p> : null}
       <button
         type="submit"

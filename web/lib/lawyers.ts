@@ -29,3 +29,11 @@ export function profileText(input: {
     .join("\n")
     .slice(0, 4000);
 }
+
+/** Public fee line: "৳2,000 first visit" or "Fee on request".
+ * Money changes hands in person; the platform never touches it. */
+export function formatFee(feeBdt: number | null | undefined): string {
+  if (feeBdt == null) return "Fee on request";
+  if (feeBdt === 0) return "Free first visit";
+  return `৳${feeBdt.toLocaleString("en-US")} first visit`;
+}

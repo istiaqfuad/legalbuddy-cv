@@ -204,6 +204,7 @@ def fetch_candidates() -> list[dict]:
         rows = conn.execute(
             f"""SELECT u.id, u.name, p.practice_areas, p.languages, p.city,
                       p.bio, p.profile_embedding, v.bar_association,
+                      p.consultation_fee_bdt,
                       COALESCE(SUM(r.rating), 0)::int AS rating_total,
                       COUNT(r.id)::int AS rating_count,
                       COALESCE(AVG(r.rating), 0)::float AS rating_avg
@@ -213,11 +214,13 @@ def fetch_candidates() -> list[dict]:
                LEFT JOIN lawyer_reviews r ON r.lawyer_id = u.id
                WHERE {_visibility_where()}
                GROUP BY u.id, u.name, p.practice_areas, p.languages, p.city,
-                        p.bio, p.profile_embedding, v.bar_association"""
+                        p.bio, p.profile_embedding, v.bar_association,
+                        p.consultation_fee_bdt"""
         ).fetchall()
     finally:
         conn.close()
     cols = ["user_id", "display_name", "practice_areas", "languages", "city",
             "bio", "profile_embedding", "bar_association",
+            "consultation_fee_bdt",
             "rating_total", "rating_count", "rating_avg"]
     return [dict(zip(cols, r)) for r in rows]

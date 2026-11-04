@@ -116,6 +116,8 @@ CREATE TABLE IF NOT EXISTS lawyer_profiles (
   city TEXT,
   bio TEXT,
   profile_embedding JSONB,
+  consultation_fee_bdt INTEGER
+    CHECK (consultation_fee_bdt IS NULL OR consultation_fee_bdt BETWEEN 0 AND 10000000),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -196,3 +198,10 @@ CREATE INDEX IF NOT EXISTS business_handoffs_lawyer_idx
   ON business_handoffs(lawyer_id, status);
 CREATE INDEX IF NOT EXISTS business_handoffs_owner_idx
   ON business_handoffs(user_id, created_at DESC);
+
+-- Public first-visit consultation fee (taka). Set by the lawyer,
+-- shown on directory, suggestions, and handoff picker. NULL means
+-- the lawyer has not set one yet. Money changes hands in person;
+-- the platform never touches it.
+ALTER TABLE lawyer_profiles ADD COLUMN IF NOT EXISTS consultation_fee_bdt INTEGER
+  CHECK (consultation_fee_bdt IS NULL OR consultation_fee_bdt BETWEEN 0 AND 10000000);

@@ -9,7 +9,8 @@ export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user) return Response.json({ detail: "Sign in required." }, { status: 401 });
   const rows = (await getDb().query(
-    `SELECT p.practice_areas, p.languages, p.city, p.bio, u.role, u.lawyer_status
+    `SELECT p.practice_areas, p.languages, p.city, p.bio, p.consultation_fee_bdt,
+            u.role, u.lawyer_status
      FROM users u LEFT JOIN lawyer_profiles p ON p.user_id = u.id WHERE u.id = $1`,
     [session.user.id],
   )) as Array<{
@@ -17,6 +18,7 @@ export async function GET() {
     languages: string[] | null;
     city: string | null;
     bio: string | null;
+    consultation_fee_bdt: number | null;
     role: string;
     lawyer_status: string;
   }>;
@@ -29,6 +31,7 @@ export async function GET() {
     languages: r.languages ?? ["english"],
     city: r.city,
     bio: r.bio,
+    consultationFeeBdt: r.consultation_fee_bdt,
     lawyerStatus: r.lawyer_status,
   });
 }
@@ -37,7 +40,13 @@ export async function GET() {
 export async function PATCH(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return Response.json({ detail: "Sign in required." }, { status: 401 });
-  let body: { practiceAreas?: unknown; languages?: unknown; city?: unknown; bio?: unknown };
+  let body: {
+    practiceAreas?: unknown;
+    languages?: unknown;
+    city?: unknown;
+    bio?: unknown;
+    consultationFeeBdt?: unknown;
+  };
   try {
     body = await req.json();
   } catch {
@@ -51,7 +60,16 @@ export async function PATCH(req: Request) {
     : null;
   const city = typeof body.city === "string" ? body.city.trim().slice(0, 80) || null : undefined;
   const bio = typeof body.bio === "string" ? body.bio.trim().slice(0, 1000) || null : undefined;
-  if (!areas && !langs && city === undefined && bio === undefined) {
+  const fee =
+    body.consultationFeeBdt === null
+      ? null
+      : typeof body.consultationFeeBdt === "number" &&
+          Number.isInteger(body.consultationFeeBdt) &&
+          body.consultationFeeBdt >= 0 &&
+          body.consultationFeeBdt <= 10000000
+        ? body.consultationFeeBdt
+        : undefined;
+  if (!areas && !langs && city === undefined && bio === undefined && fee === undefined) {
     return Response.json({ detail: "Nothing to update." }, { status: 400 });
   }
   const db = getDb();
@@ -66,6 +84,7 @@ export async function PATCH(req: Request) {
   if (langs && langs.length > 0) patch.languages = langs;
   if (city !== undefined) patch.city = city;
   if (bio !== undefined) patch.bio = bio;
+  if (fee !== undefined) patch.consultation_fee_bdt = fee;
   const keys = Object.keys(patch);
   await db.query(
     `INSERT INTO lawyer_profiles (user_id, ${keys.join(", ")})

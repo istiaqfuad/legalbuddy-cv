@@ -542,6 +542,7 @@ def post_match_lawyers(req: MatchRequest):
             "city": r.get("city"),
             "bio": r.get("bio"),
             "bar_association": r.get("bar_association"),
+            "consultation_fee_bdt": r.get("consultation_fee_bdt"),
             "rating_avg": round(float(r.get("rating_avg") or 0), 1),
             "rating_count": int(r.get("rating_count") or 0),
             "score": round(float(r["score"]), 3),

@@ -5,7 +5,7 @@ import { getDb } from "@/lib/db";
 export async function GET() {
   const rows = (await getDb().query(
     `SELECT u.id, u.name, p.practice_areas, p.languages, p.city, p.bio,
-            v.bar_association,
+            v.bar_association, p.consultation_fee_bdt,
             COALESCE(AVG(r.rating), 0)::float AS rating_avg,
             COUNT(r.id)::int AS rating_count
      FROM users u
@@ -15,7 +15,7 @@ export async function GET() {
      WHERE u.role = 'lawyer' AND u.lawyer_status = 'verified'
        AND u.plan = 'professional' AND u.subscription_status IN ('active', 'trialing')
      GROUP BY u.id, u.name, p.practice_areas, p.languages, p.city, p.bio,
-              v.bar_association
+              v.bar_association, p.consultation_fee_bdt
      ORDER BY rating_count DESC, u.created_at DESC
      LIMIT 100`,
   )) as Array<{
@@ -26,6 +26,7 @@ export async function GET() {
     city: string | null;
     bio: string | null;
     bar_association: string | null;
+    consultation_fee_bdt: number | null;
     rating_avg: number;
     rating_count: number;
   }>;
@@ -39,6 +40,7 @@ export async function GET() {
       city: r.city,
       bio: r.bio,
       bar_association: r.bar_association,
+      consultation_fee_bdt: r.consultation_fee_bdt,
       rating_avg: Math.round(Number(r.rating_avg) * 10) / 10,
       rating_count: r.rating_count,
     })),

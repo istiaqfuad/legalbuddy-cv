@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { formatFee } from "@/lib/lawyers";
 
 /** Business compliance dashboard: deadline tracker plus document vault.
  * Dates are owner-confirmed records with citations they can verify;
@@ -116,7 +117,7 @@ export default function BusinessDashboard() {
   const [pRegulated, setPRegulated] = useState(false);
   const [pCustomerData, setPCustomerData] = useState(false);
 
-  const [lawyers, setLawyers] = useState<Array<{ user_id: string; display_name: string; practice_areas: string[]; city: string | null }>>([]);
+  const [lawyers, setLawyers] = useState<Array<{ user_id: string; display_name: string; practice_areas: string[]; city: string | null; consultation_fee_bdt: number | null }>>([]);
   const [handoffs, setHandoffs] = useState<Array<{ id: string; subject: string; status: string; lawyer_name: string; created: string; lawyer_note: string }>>([]);
   const [hLawyer, setHLawyer] = useState("");
   const [hSubject, setHSubject] = useState("");
@@ -616,13 +617,14 @@ export default function BusinessDashboard() {
         <p className="mt-1 text-sm leading-relaxed text-stone-400">
           Package your facts and vault files for a verified lawyer. They read what you share
           and continue the matter in their own channel; the dashboard only tracks the request.
+          You pay the lawyer directly at your first visit — nothing is charged through the app.
         </p>
         <form onSubmit={sendHandoff} className="mt-4 grid gap-2">
           <select value={hLawyer} onChange={(e) => setHLawyer(e.target.value)} required className={inputCls} aria-label="Lawyer">
             <option value="">Choose a verified lawyer…</option>
             {lawyers.map((l) => (
               <option key={l.user_id} value={l.user_id}>
-                {l.display_name}
+                {l.display_name} — {formatFee(l.consultation_fee_bdt)}
                 {l.practice_areas?.length ? ` — ${l.practice_areas.slice(0, 3).join(", ")}` : ""}
                 {l.city ? ` (${l.city})` : ""}
               </option>
