@@ -1,97 +1,141 @@
 # LegalBuddy — Grounded Bangladesh Legal Research Copilot
 
-Built for the Meta AI Developer Hackathon. See [PLAN.md](PLAN.md) for the full plan.
+[![ci](https://github.com/istiaqfuad/legalbuddy-cv/actions/workflows/ci.yml/badge.svg)](https://github.com/istiaqfuad/legalbuddy-cv/actions/workflows/ci.yml)
+[![release](https://github.com/istiaqfuad/legalbuddy-cv/actions/workflows/release.yml/badge.svg)](https://github.com/istiaqfuad/legalbuddy-cv/actions/workflows/release.yml)
 
-## Setup
+Live at [legalbuddy.irflab.tech](https://legalbuddy.irflab.tech). Built for the
+Meta AI Developer Hackathon. See [PLAN.md](PLAN.md) for the original plan.
 
-Requires `uv` (Python 3.14, see `.python-version`).
+LegalBuddy answers questions about Bangladeshi law in plain Bangla, English,
+or a mix, and every claim points to the exact section behind it: the act, the
+section text, and a link to the source. It also reads your own documents,
+tracks compliance deadlines for businesses, and connects owners with verified
+lawyers.
+
+**LegalBuddy is an information tool, not a lawyer.** It cites sources so you
+can verify everything, and it hands off to human advocates where judgment
+matters.
+
+## What it does
+
+- **Cited chat.** Ask in your own words; get plain answers grounded in
+  Bangladeshi statutes with a collapsible Sources panel. Streams token by
+  token with a stall watchdog and background generation per conversation.
+- **Deep research agent.** A ReAct loop over statutes, case studies, your
+  files, and recent news, with a step progress bar (Starter: 3 steps,
+  Professional: 6). Citations are numbered after a Jina rerank.
+- **Document vault.** Upload licences, contracts, and case files. Text is
+  extracted (including vision transcription for scans), chunked per file, and
+  used to ground answers. Expiry dates are suggested from the file text;
+  tracking them is always your tap.
+- **Contract review.** Flags penalty, termination, payment, and similar
+  clauses against retrieved statutes only. Ungrounded flags are dropped, never
+  shown. Flags prefill an advocate handoff in one tap.
+- **Business dashboard** (`/business`, Business plan). Deadline tracker with
+  recurrence roll-forward, a monthly snapshot (done, due, gaps, upcoming),
+  the vault, a short business profile that seeds starter renewals, and
+  advocate handoff with an optional preferred visit date.
+- **Lawyer directory and matching** (`/lawyers`). Verified lawyers on a
+  current Professional plan are listed with ratings and their public
+  first-visit fee (set by the lawyer; paid in person, never through the app).
+  Recommendations combine practice-area fit, semantic match, and Bayesian
+  rating weight, each with a templated reason.
+- **Accounts and billing.** Neon Auth (email plus Google), Stripe test-mode
+  subscriptions with webhook as source of truth, quotas (Lite 20/day,
+  Starter 100/day, Professional unlimited), and a lawyer verification flow
+  with admin review.
+
+Plan details live on the [pricing page](https://legalbuddy.irflab.tech/pricing).
+
+## Quickstart
+
+Requires `uv` (Python 3.14, see `.python-version`) and Docker.
 
 ```bash
 cp .env.example .env   # fill in keys; never commit .env
-uv sync                # create .venv and install locked deps
-uv run pytest          # unit tests
-```
-
-Key names live in [.env.example](.env.example): Qdrant Cloud (`QDRANT_URL`,
-`QDRANT_API_KEY`, `COLLECTION_NAME`), Voyage AI (`VOYAGE_API_KEY`,
-`EMBEDDING_MODEL=voyage-4`), Baseten (`BASETEN_API_KEY`).
-
-## Chatbot (single command)
-
-```bash
-docker compose up --build
+docker compose up -d --build api web
 ```
 
 Then open [http://localhost:3001](http://localhost:3001) in a browser.
-Host ports are 3001 (web) / 8001 (api) to avoid clashing with other local
-stacks; the containers talk to each other as `web` → `http://api:8000`.
-Uses the same repo `.env` as ingestion — no extra config.
+Host ports are 3001 (web) / 8001 (api); the containers talk to each other
+as `web` → `http://api:8000`. Both services read the repo `.env`.
 
-- `src/legalbuddy/api.py` — FastAPI: `POST /api/chat` (cited answers),
-  `POST /api/chat/stream` (SSE token stream), `GET /health` (index status)
-- `web/` — Next.js + Tailwind chat UI; `/api/chat` route proxies to the
-  API server-side so keys never reach the browser
-- `web/lib/chat-api.ts` — the only seam to the answer backend (SSE parsing,
-  stall watchdog); `web/stores/chat-store.ts` — zustand conversation state;
-  `web/components/chat/` — feature folder (view, citations, markdown)
+```bash
+uv sync            # create .venv and install locked deps
+uv run pytest      # backend unit tests (172 passing)
+cd web && npm run lint && npx tsc --noEmit
+node web/scripts/db-migrate.mjs            # Neon schema (statement-split, idempotent)
+node web/scripts/stripe-setup.mjs          # create Stripe test-mode prices
+stripe listen --forward-to localhost:3001/api/billing/webhook
+```
 
-## Layout
+Key names live in [.env.example](.env.example): Qdrant Cloud, Voyage AI,
+Baseten and Meta inference, Jina rerank, Tavily news, Neon Postgres and
+object storage, Stripe test keys, Google OAuth.
 
-- `src/legalbuddy/chunking.py` — structure-aware statute chunker (section =
-  chunk, Bangla/English aware, footnote resolution)
-- `src/legalbuddy/embedder.py` — Voyage `voyage-4` dense + FastEmbed
-  `Qdrant/bm25` sparse encoders
-- `src/legalbuddy/store.py` — Qdrant hybrid (dense `denso` + sparse `sparso`)
-  upsert and RRF search
-- `src/legalbuddy/chat.py` — Baseten `meta-models/muse-spark-open-1026`
-  chat with statute citations
-- `scripts/ingest_statutes.py` — bulk ingestion of `data/acts/*.json`
-- `scripts/ask.py` — CLI: ask a question, get a cited answer
-- `tests/` — unit tests
+## How it is built
 
-## Pipeline
+```
+src/legalbuddy/        FastAPI answer backend
+  api.py               routes: chat + streams, documents, contract review,
+                       match-lawyers, internal token gate
+  chat.py              hybrid retrieval (dense + sparse, RRF, rerank) and
+                       cited answers via Baseten Muse Spark
+  agent.py             ReAct deep-research loop (Meta small model) with a
+                       Postgres checkpointer for resume-safe runs
+  documents.py         upload pipeline: extract, chunk per file, embed,
+                       store in Qdrant + Neon S3
+  expiry.py            rules-only expiry-date suggestions from stored text
+  contract_review.py   clause spotting + grounded flags, citations validated
+  matcher.py           lawyer recommendations with rating weight
+  memory.py            Postgres chat history (LangGraph-ready)
+web/                   Next.js 16 + Tailwind + zustand
+  app/                 routes: chat, business dashboard, lawyers, lawyer
+                       inbox, billing, pricing, auth
+  lib/chat-api.ts      the only seam to the answer backend (SSE parsing)
+  stores/chat-store.ts conversation state, background streams, agent budget
+  components/          feature folders per area
+scripts/               ingest_statutes.py, ingest_cases.py, ask.py, eval tools
+tests/                 backend unit tests (hermetic where external)
+docs/                  runbooks: ingestion, retrieval, billing, research agent
+```
 
-`data/acts/*.json` (bdlaws format, gitignored) → `chunk_act` → Voyage-4
-dense (1024-dim, `input_type="document"`) + BM25 sparse → Qdrant
-`legal-statutes` → hybrid retrieval → Muse Spark answer with citations.
+Notable engineering decisions are written up in [docs/](docs/README.md):
+retrieval fusion, reranking, streaming reliability, memory, billing and
+verification, the recommender, and the research agent.
 
-## Ingestion runbook
+## Data and ingestion
 
-Ingestion is resumable: an act counts as done only when the manifest
-(`data/manifests/statutes.json`) carries its current file SHA-256 and the
-current ingest version. Changed acts are deleted by `source_file` and
-re-ingested; failures land in `files_failed` and retry on the next run.
+`data/` is gitignored. Statutes (`data/acts/*.json`, bdlaws format) ingest
+resumably with a manifest; case studies ingest from the case pipeline.
+See [docs/case-studies-pipeline.md](docs/case-studies-pipeline.md) and the
+ingestion section of the runbook.
 
 ```bash
 uv run python scripts/ingest_statutes.py --check-only   # preflight + plan
 uv run python scripts/ingest_statutes.py                # full / resume
-uv run python scripts/ingest_statutes.py --force        # redo everything
+uv run python scripts/ingest_cases.py                   # case studies
 ```
 
-Pacing lives in `VoyageDense` (request gap + rolling TPM window).
-Defaults are the free tier: `VOYAGE_REQUEST_GAP_S=25`,
-`VOYAGE_TOKENS_PER_MIN=8000`. On a paid Voyage tier set the gap to `0`
-and the TPM to the tier limit — no code change needed.
+Collection settings the code expects (verified at startup): `legal-statutes`
+with named dense vector `denso` (1024, cosine) and sparse `sparso` (idf),
+plus keyword payload indexes on act, section, and source fields.
 
-**Collection settings the code expects but never creates** (collection
-`legal-statutes`, verified at startup; ingestion refuses to run otherwise):
+## Deployment
 
-- Named dense vector `denso`: size `1024`, distance `Cosine`
-- Named sparse vector `sparso`: modifier `idf`
-- Payload indexes: `act_title`, `act_no`, `act_year`, `language`,
-  `section_label`, `source_file` as `keyword`; `is_repealed` as `bool`
+Plain pushes deploy nothing. Pushing a `v*` tag runs the `release`
+workflow: backend tests, frontend typecheck and lint, container build and
+push, Heroku release, and a smoke test (homepage serves, unsigned webhook
+rejected). The image pins `linux/amd64` without attestations because
+Heroku's registry rejects manifest lists.
 
-If `section_label` / `source_file` indexes are missing, add them before
-the bulk run (payload indexes are cheap on an existing collection and
-Qdrant builds filtered-HNSW links for them):
-
-```python
-from qdrant_client import QdrantClient, models
-c = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, port=443, timeout=120)
-for f in ("section_label", "source_file"):
-    c.create_payload_index("legal-statutes", field_name=f,
-                           field_schema=models.PayloadSchemaType.KEYWORD)
+```bash
+git tag -a v1.0.3 -m "..." && git push origin main v1.0.3
 ```
 
-Changing the dense size/distance or sparse modifier requires recreating
-the collection and a `--force` re-ingest.
+## Contributing
+
+Micro-tasks with a commit each; `uv run pytest`, `tsc --noEmit`, and
+`npm run lint` must all pass before pushing (lint's exit code counts, not
+its tail). Browser specs live in `/tmp/btest` as throwaway probes; repo
+tests stay hermetic. Never commit `.env`; never add co-author trailers.
