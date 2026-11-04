@@ -287,6 +287,51 @@ export default function PricingPage() {
           Cancel or downgrade anytime. Paid access stays on until the end of
           your billing period. Receipts and invoices live in Stripe.
         </p>
+        <section aria-label="Compare plans" className="mt-12">
+          <h2 className="font-display text-xl text-stone-50 sm:text-2xl">Compare everything</h2>
+          <div className="mt-4 overflow-x-auto rounded-xl border border-stone-800/80">
+            <table className="w-full min-w-[640px] border-collapse text-sm">
+              <caption className="sr-only">Feature comparison across Lite, Starter, Professional, and Business</caption>
+              <thead>
+                <tr className="border-b border-stone-800 bg-stone-900/60 text-left">
+                  <th scope="col" className="px-4 py-3 font-medium text-stone-400">What you get</th>
+                  <th scope="col" className="px-4 py-3 font-medium text-stone-200">Lite</th>
+                  <th scope="col" className="px-4 py-3 font-medium text-stone-200">Starter</th>
+                  <th scope="col" className="px-4 py-3 font-medium text-stone-200">Professional</th>
+                  <th scope="col" className="px-4 py-3 font-medium text-stone-200">Business</th>
+                </tr>
+              </thead>
+              <tbody className="text-stone-300">
+                {[
+                  ["Cited answers per day", "20", "100", "Unlimited", "Unlimited"],
+                  ["Deep-research runs", "—", "3 steps", "6 steps", "6 steps"],
+                  ["Recent news with research", "—", "✓", "✓", "✓"],
+                  ["Document vault", "✓", "✓", "✓", "✓"],
+                  ["Expiry date suggestions", "—", "—", "—", "✓"],
+                  ["Contract review with citations", "—", "—", "—", "✓"],
+                  ["Deadline tracking and monthly snapshot", "—", "—", "—", "✓"],
+                  ["Advocate handoff", "—", "—", "—", "✓"],
+                  ["Lawyer directory profile", "—", "—", "✓", "—"],
+                  ["Lawyer recommendations", "—", "—", "✓", "—"],
+                ].map(([feature, ...cells]) => (
+                  <tr key={feature} className="border-b border-stone-800/60 last:border-0">
+                    <th scope="row" className="px-4 py-2.5 text-left font-normal text-stone-400">{feature}</th>
+                    {cells.map((c, i) => (
+                      <td key={i} className={c === "✓" ? "px-4 py-2.5 text-gold" : "px-4 py-2.5 text-stone-500"}>
+                        {c}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-3 text-xs text-stone-500">
+            The vault is free for everyone who signs in. Business-only tools live in
+            the compliance dashboard; the directory profile and recommendations are
+            the Professional payoff for lawyers.
+          </p>
+        </section>
       </main>
       {pending && pendingTier ? (
         <ConfirmModal

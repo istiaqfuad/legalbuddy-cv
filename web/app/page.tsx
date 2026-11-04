@@ -62,34 +62,47 @@ const FEATURES = [
 
 const TIERS = [
   {
-    name: "Lite · Individuals",
+    name: "Lite",
     price: "Free",
     per: "forever",
-    blurb: "Capped legal Q&A for everyday run-ins with the rules.",
+    blurb: "For a quick question now and then.",
     cta: "Start free",
     href: "/login",
-    soon: false,
-    points: ["Capped legal Q&A", "Full section citations", "Plain answers in your language"],
+    points: ["20 cited answers a day", "Full section citations", "Plain answers in your language"],
   },
   {
-    name: "Professional · Lawyers",
+    name: "Starter",
+    price: "~$5",
+    per: "per month",
+    badge: "Best first step",
+    blurb: "For your first real matter, without the full commitment.",
+    cta: "Choose Starter",
+    href: "/pricing",
+    highlight: true,
+    points: ["100 cited answers a day", "Everything in Lite", "Room to grow into Professional later"],
+  },
+  {
+    name: "Professional",
     price: "~$12.99",
     per: "per month",
-    blurb: "Unlimited cited research for professionals and counsel.",
+    blurb: "For lawyers and anyone researching every day.",
     cta: "Choose Professional",
     href: "/pricing",
-    soon: false,
-    points: ["Unlimited legal Q&A", "Cited research and case analysis", "Lawyer directory profile"],
+    points: ["Unlimited cited research", "Extended deep-research runs", "Lawyer directory profile"],
   },
   {
     name: "Business",
     price: "~$19.99",
     per: "per month",
-    blurb: "Company plans are on the way. What is coming:",
-    cta: "Coming soon",
+    badge: "New",
+    blurb: "Renewals and documents, tracked in one place.",
+    cta: "Choose Business",
     href: "/pricing",
-    soon: true,
-    points: ["Contract drafting", "Compliance tracking", "Company workspace"],
+    points: [
+      "Compliance dashboard and deadline tracking",
+      "Private vault for licences and contracts",
+      "More features are coming soon",
+    ],
   },
 ];
 
@@ -136,18 +149,20 @@ export default function Landing() {
           >
             <p className="text-xs font-semibold tracking-wider text-stone-500 uppercase">Example</p>
             <p className="mt-2 rounded-lg bg-gold px-3.5 py-2.5 text-sm text-ink">
-              খুনের শাস্তি কী?
+              Can my landlord ask me to leave without notice?
             </p>
             <p className="mt-3 rounded-lg border border-stone-800 bg-ink px-3.5 py-2.5 text-sm leading-relaxed text-stone-300">
-              The Penal Code answers this in a single section. <span className="font-semibold text-gold">[1]</span>
+              For a monthly tenancy, no. The law needs 15 days of written notice first.{" "}
+              <span className="font-semibold text-gold">[1]</span>
             </p>
             <div className="mt-2 rounded-lg border border-stone-800 bg-ink p-3">
               <p className="text-xs font-semibold text-stone-200">
-                [1] Section 302: Punishment for murder
+                [1] Section 106: Duration of certain leases in absence of written contract
               </p>
-              <p className="mt-0.5 text-xs text-stone-500">The Penal Code, 1860 (XLV of 1860)</p>
+              <p className="mt-0.5 text-xs text-stone-500">The Transfer of Property Act, 1882</p>
               <p className="mt-1.5 border-l-2 border-gold/60 pl-2 text-xs leading-relaxed text-stone-400">
-                “…shall be punished with death, or imprisonment for life…”
+                “…a lease of immoveable property from month to month is terminable by
+                fifteen days notice…”
               </p>
             </div>
           </div>
@@ -202,16 +217,21 @@ export default function Landing() {
       <section id="pricing" className="mx-auto max-w-5xl scroll-mt-20 px-4 py-12 sm:px-6">
         <h2 className="font-display text-2xl text-stone-50 sm:text-3xl">Pricing</h2>
         <p className="mt-2 text-sm text-stone-400">Start free. Pay only when research becomes work.</p>
-        <div className="mt-6 grid gap-4 md:grid-cols-3">
+        <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {TIERS.map((t) => (
             <div
               key={t.name}
               className={`flex flex-col rounded-xl border p-6 ${
-                t.name === "Researcher"
+                "highlight" in t && t.highlight
                   ? "border-gold/70 bg-stone-900/60"
                   : "border-stone-800/80 bg-ink"
               }`}
             >
+              {"badge" in t && t.badge ? (
+                <p className="mb-2 inline-flex w-fit rounded-full border border-gold/50 px-2.5 py-0.5 text-[11px] font-medium text-gold-light">
+                  {t.badge}
+                </p>
+              ) : null}
               <h3 className="text-sm font-semibold tracking-wider text-stone-300 uppercase">{t.name}</h3>
               <p className="mt-2">
                 <span className="font-display text-3xl text-stone-50">{t.price}</span>{" "}
@@ -225,18 +245,12 @@ export default function Landing() {
                   </li>
                 ))}
               </ul>
-              {t.soon ? (
-                <span className="mt-5 cursor-default rounded-md border border-stone-700 px-4 py-2 text-center text-sm text-stone-500">
-                  {t.cta}
-                </span>
-              ) : (
-                <Link
-                  href={t.href}
-                  className="mt-5 rounded-md bg-gold px-4 py-2 text-center text-sm font-semibold text-ink transition-colors hover:bg-gold-light"
-                >
-                  {t.cta}
-                </Link>
-              )}
+              <Link
+                href={t.href}
+                className="mt-5 rounded-md bg-gold px-4 py-2 text-center text-sm font-semibold text-ink transition-colors hover:bg-gold-light"
+              >
+                {t.cta}
+              </Link>
             </div>
           ))}
         </div>
