@@ -3,9 +3,6 @@
 [![ci](https://github.com/istiaqfuad/legalbuddy-cv/actions/workflows/ci.yml/badge.svg)](https://github.com/istiaqfuad/legalbuddy-cv/actions/workflows/ci.yml)
 [![release](https://github.com/istiaqfuad/legalbuddy-cv/actions/workflows/release.yml/badge.svg)](https://github.com/istiaqfuad/legalbuddy-cv/actions/workflows/release.yml)
 
-Live at [legalbuddy.irflab.tech](https://legalbuddy.irflab.tech). Built for the
-Meta AI Developer Hackathon. See [PLAN.md](PLAN.md) for the original plan.
-
 LegalBuddy answers questions about Bangladeshi law in plain Bangla, English,
 or a mix, and every claim points to the exact section behind it: the act, the
 section text, and a link to the source. It also reads your own documents,
